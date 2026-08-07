@@ -1,6 +1,7 @@
 const status = document.querySelector('#status');
 const autoOpen = document.querySelector('#auto-open');
 const event = document.querySelector('#event');
+const applications = document.querySelector('#applications');
 
 async function loadPreferences() {
   const { autoOpen: enabled = true, localSessionState } = await chrome.storage.local.get({ autoOpen: true, localSessionState: null });
@@ -25,6 +26,10 @@ chrome.runtime.sendMessage({ type: 'agent_status' }, (result) => {
   }
   status.textContent = `Agent 已就绪 · v${result.version}`;
   status.className = 'status ready';
+  if (result.applications?.length) {
+    applications.hidden = false;
+    applications.textContent = `自动检测：${result.applications.join(' · ')}`;
+  }
 });
 
 loadPreferences();
