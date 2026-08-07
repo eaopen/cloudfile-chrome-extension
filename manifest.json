@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "CloudFile Local Console",
-  "description": "A private Chrome console for the CloudFile Local Agent.",
-  "version": "0.1.0",
+  "name": "CloudFile Local Session Receiver",
+  "description": "Passes downloaded CloudFile session files to the signed local agent.",
+  "version": "0.2.0",
   "action": {
-    "default_title": "CloudFile Local Console",
+    "default_title": "CloudFile Local",
     "default_popup": "popup.html"
   },
-  "options_page": "options.html",
-  "permissions": ["storage"],
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
+  "background": { "service_worker": "background.js" },
+  "permissions": ["downloads", "nativeMessaging"]
 }
