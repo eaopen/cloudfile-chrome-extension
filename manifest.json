@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "CloudFile Local Console",
+  "description": "A private Chrome console for the CloudFile Local Agent.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "CloudFile Local Console",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
+}

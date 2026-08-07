@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CloudFile 本地控制台</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="console">
+      <header class="masthead">
+        <div><p class="eyebrow">LOCAL AGENT / 01</p><h1>CloudFile<br><em>Console</em></h1></div>
+        <button class="gear" id="open-settings" aria-label="打开连接设置">⚙</button>
+      </header>
+      <section class="connection" aria-live="polite">
+        <span id="signal" class="signal pending"></span>
+        <span id="connection-label">正在检查本地 Agent</span>
+      </section>
+      <section id="setup-card" class="setup-card" hidden>
+        <p>需要先配置本地 Agent 的地址和配对令牌。</p>
+        <button id="setup-button" class="outline">配置连接</button>
+      </section>
+      <section id="workspace" hidden>
+        <div class="section-title"><p>PROJECTS</p><button id="new-project" class="text-button">+ 新项目</button></div>
+        <div id="project-list" class="project-list"></div>
+        <form id="project-form" class="project-form" hidden>
+          <label>项目名称<input name="name" maxlength="80" placeholder="例如：营销站点" required></label>
+          <label>本地路径<input name="rootPath" placeholder="/Users/name/workspace/project" required></label>
+          <div class="form-actions"><button type="button" id="cancel-project" class="quiet">取消</button><button>创建项目</button></div>
+        </form>
+        <form id="task-form" class="task-form">
+          <label for="task-prompt">发给本地 Agent</label>
+          <textarea id="task-prompt" name="prompt" rows="3" placeholder="选择项目后，描述你要完成的工作…" required disabled></textarea>
+          <button id="queue-task" disabled>排入任务队列 <span>↗</span></button>
+        </form>
+      </section>
+      <p id="notice" class="notice" role="status"></p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
