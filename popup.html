@@ -1,3 +1,25 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CloudFile Local</title><link rel="stylesheet" href="popup.css"></head>
-<body><main><p class="eyebrow">CLOUDFILE / LOCAL</p><h1>本地会话<br><em>接收器</em></h1><p>下载 CloudFile 生成的 <code>.cloudfile</code> 会话文件后，扩展会通过 Native Messaging 将它交给本地 Agent。</p><div id="status" class="status">正在检查 Agent…</div><aside>扩展不读取 Cookie、不访问 localhost，也不保存 Seafile Token。</aside></main><script type="module" src="popup.js"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CloudFile Local</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">CLOUDFILE / LOCAL</p>
+    <h1>本地会话<br><em>接收器</em></h1>
+    <p class="intro">下载 CloudFile 生成的 <code>.cloudfile</code> 会话文件后，扩展会通过 Native Messaging 交给本地 Agent。</p>
+    <div id="status" class="status" aria-live="polite">正在检查 Agent…</div>
+    <label class="switch-row" for="auto-open">
+      <span><strong>自动打开会话</strong><small>关闭后仅保留下载文件，不启动本地程序。</small></span>
+      <input id="auto-open" type="checkbox">
+      <i aria-hidden="true"></i>
+    </label>
+    <p id="event" class="event" hidden></p>
+    <aside>扩展不读取 Cookie、不访问 localhost，也不保存 Seafile Token。</aside>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
