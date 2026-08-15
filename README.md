@@ -2,7 +2,7 @@
 
 > 用途：说明 `.cloudfile` 会话接收扩展的安装、权限和安全边界
 > 适用版本：Seafile CE 14 扩展版；Manifest V3，扩展版本以 `manifest.json` 为准
-> 当前状态：验证中；开发者模式加载可用，签名发布和跨平台全链路验收待完成
+> 当前状态：验证中；开发者模式加载可用，Web Store 发布包可打包（见下），上传发布与跨平台全链路验收待完成
 
 这是一个 Manifest V3 扩展：仅监听下载完成的 `.cloudfile` 会话文件（含 Hub 生成的 `blob:` 下载），并使用 Native Messaging 将文件路径交给本机 Agent。没有 Cookie、网页注入、localhost、网页数据采集或 Seafile Token 权限；Agent 会独立验证会话中的受信任服务端 origin 与一次性票据。
 
@@ -14,3 +14,17 @@
 弹窗中的「自动打开会话」默认开启，可随时关闭。关闭后会话文件仍下载，但扩展不会启动任何本地程序；重新开启后仅处理之后完成下载的会话文件。
 
 Agent 状态正常时，弹窗会显示已自动检测到的 Office / 设计软件。软件选择由 Agent 在本机完成：用户规则优先，其次是已检测软件，最后才回退系统默认关联；扩展不读取或保存本机程序路径。
+
+## Web Store 发布包
+
+Chrome Web Store 接受未签名的 MV3 目录 zip，签名（打包成 `.crx`）由 Google 在发布时完成，
+所以发布不需要购买代码签名证书，只需要一次性 $5 的开发者账号。打包：
+
+```bash
+./scripts/package.sh
+```
+
+产出 `dist/cloudfile-local-session-receiver-<version>.zip`，只含 manifest 与四个资源文件
+（不含 README、脚本与 dotfile）。上传：Chrome Web Store Developer Dashboard →
+New item → 上传 zip → 提交审核。发布后的扩展 ID 固定，用户侧的 Native Host
+`allowed_origins` 改用该 ID（`chrome-extension://<id>/`），不再依赖开发者模式。
