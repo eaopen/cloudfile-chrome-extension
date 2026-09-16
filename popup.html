@@ -13,6 +13,15 @@
     <p class="intro">在 CloudFile 网页点击「本地打开 / 本地编辑」后，扩展会通过 Native Messaging 交给本地 Agent 直接打开文件。</p>
     <div id="status" class="status" aria-live="polite">正在检查 Agent…</div>
     <p id="applications" class="applications" hidden></p>
+    <section id="workspace" class="workspace" hidden>
+      <p class="workspace-label">本地文件目录</p>
+      <code id="workspace-path" class="workspace-path"></code>
+      <div class="workspace-actions">
+        <button id="open-workspace" type="button" hidden>打开本地目录</button>
+        <button id="copy-workspace" type="button" hidden>复制本地路径</button>
+      </div>
+      <p id="workspace-hint" class="workspace-hint" hidden></p>
+    </section>
     <aside>扩展不读取 Cookie、不访问 localhost，也不保存 Seafile Token。</aside>
   </main>
   <script type="module" src="popup.js"></script>

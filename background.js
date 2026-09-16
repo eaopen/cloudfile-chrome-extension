@@ -28,10 +28,19 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
 
 // 扩展 popup 查询 Agent 状态与已检测应用。
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== 'agent_status') return false;
-  sendNative({ type: 'status' }).then(sendResponse).catch((error) => sendResponse({
-    ok: false,
-    error: error.message,
-  }));
-  return true;
+  if (message?.type === 'agent_status') {
+    sendNative({ type: 'status' }).then(sendResponse).catch((error) => sendResponse({
+      ok: false,
+      error: error.message,
+    }));
+    return true;
+  }
+  if (message?.type === 'open_workspace') {
+    sendNative({ type: 'open_workspace' }).then(sendResponse).catch((error) => sendResponse({
+      ok: false,
+      error: error.message,
+    }));
+    return true;
+  }
+  return false;
 });
