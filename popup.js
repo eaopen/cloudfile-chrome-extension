@@ -5,8 +5,29 @@ const workspacePath = document.querySelector('#workspace-path');
 const openButton = document.querySelector('#open-workspace');
 const copyButton = document.querySelector('#copy-workspace');
 const workspaceHint = document.querySelector('#workspace-hint');
+const helpButton = document.querySelector('#help');
 
 let workspaceRoot = '';
+
+const HELP_PATH = 'cloudfile/local-app-help/';
+
+helpButton.addEventListener('click', async () => {
+  let base = '';
+  try {
+    const stored = await chrome.storage.local.get('server');
+    base = stored?.server || '';
+  } catch {
+    base = '';
+  }
+  if (!base) {
+    showHint('请先在 CloudFile 网页点击一次「本地查看/本地编辑」，扩展即可记住帮助页地址；或直接在浏览器访问站点下的 /seafile/cloudfile/local-app-help/ 页面。');
+    return;
+  }
+  // server 形如 http://host:port/seafile（站点 origin + siteRoot），
+  // 帮助页挂在 siteRoot 下，故拼接相对路径即可。
+  const url = base.replace(/\/+$/, '') + '/' + HELP_PATH;
+  chrome.tabs.create({ url });
+});
 
 chrome.runtime.sendMessage({ type: 'agent_status' }, (result) => {
   if (chrome.runtime.lastError || !result?.ok) {

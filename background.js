@@ -11,7 +11,15 @@ async function sendNative(message) {
 //   2. Agent 侧 config.allowed_origins 对 descriptor.server 二次校验。
 // 因此这里不再重复校验 sender，域名只在一处（manifest）维护。
 chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'ping') {
+    sendResponse({ ok: true });
+    return false;
+  }
   if (message?.type !== 'open_session') return;
+  // 记录最近一次会话的 server，供 popup 的「帮助」按钮拼出帮助页地址。
+  if (message.server) {
+    chrome.storage.local.set({ server: message.server }).catch(() => {});
+  }
   const payload = {
     type: 'open_session',
     protocol: message.protocol,
