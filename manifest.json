@@ -8,5 +8,11 @@
     "default_popup": "popup.html"
   },
   "background": { "service_worker": "background.js" },
+  "externally_connectable": {
+    "matches": [
+      "http://10.9.8.162:6111/*",
+      "http://10.12.1.157:8092/*"
+    ]
+  },
   "permissions": ["downloads", "nativeMessaging", "storage"]
 }

@@ -1,22 +1,5 @@
 const status = document.querySelector('#status');
-const autoOpen = document.querySelector('#auto-open');
-const event = document.querySelector('#event');
 const applications = document.querySelector('#applications');
-
-async function loadPreferences() {
-  const { autoOpen: enabled = true, localSessionState } = await chrome.storage.local.get({ autoOpen: true, localSessionState: null });
-  autoOpen.checked = enabled;
-  if (localSessionState?.message) {
-    event.hidden = false;
-    event.textContent = localSessionState.message;
-  }
-}
-
-autoOpen.addEventListener('change', async () => {
-  await chrome.storage.local.set({ autoOpen: autoOpen.checked });
-  event.hidden = false;
-  event.textContent = autoOpen.checked ? '新会话文件会自动交给本地 Agent。' : '新会话文件将只下载，不会自动启动本地程序。';
-});
 
 chrome.runtime.sendMessage({ type: 'agent_status' }, (result) => {
   if (chrome.runtime.lastError || !result?.ok) {
@@ -31,5 +14,3 @@ chrome.runtime.sendMessage({ type: 'agent_status' }, (result) => {
     applications.textContent = `自动检测：${result.applications.join(' · ')}`;
   }
 });
-
-loadPreferences();

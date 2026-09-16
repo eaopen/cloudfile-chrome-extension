@@ -1,46 +1,32 @@
 const HOST = 'com.cloudfile.local_agent';
-const SETTINGS = { autoOpen: true };
 
 async function sendNative(message) {
   return chrome.runtime.sendNativeMessage(HOST, message);
 }
 
-async function updateState(state) {
-  await chrome.storage.local.set({ localSessionState: { ...state, at: Date.now() } });
-}
-
-function isSessionDownload(item) {
-  if (!item?.filename?.toLowerCase().endsWith('.cloudfile')) return false;
-  try {
-    const url = new URL(item.finalUrl || item.url);
-    // Hub creates the descriptor with a browser Blob so its download URL is
-    // usually blob:.  The Agent validates the descriptor's server origin and
-    // one-time ticket before any network request, which is the security gate.
-    return url.protocol === 'https:' || url.protocol === 'http:' || url.protocol === 'blob:';
-  } catch {
-    return false;
-  }
-}
-
-chrome.downloads.onChanged.addListener(async (delta) => {
-  if (delta.state?.current !== 'complete') return;
-  try {
-    const { autoOpen } = await chrome.storage.local.get(SETTINGS);
-    const [item] = await chrome.downloads.search({ id: delta.id });
-    if (!isSessionDownload(item)) return;
-    if (!autoOpen) {
-      await updateState({ kind: 'paused', message: '已下载会话文件；自动打开已关闭。' });
-      return;
-    }
-    const result = await sendNative({ type: 'open_session_file', path: item.filename });
-    if (!result?.ok) throw new Error(result?.error || 'Agent rejected the session file.');
-    await updateState({ kind: 'ready', message: '已交给本地 Agent 打开。' });
-  } catch (error) {
-    await updateState({ kind: 'error', message: error.message || '无法交给本地 Agent。' });
-    console.warn('CloudFile Local Agent did not accept the session file.', error);
-  }
+// 网页 → 扩展 → 本地 Agent 的消息通道。
+// 安全分层：
+//   1. manifest.json 的 externally_connectable.matches 是主闸，Chrome 强制
+//      只允许白名单域名调用本监听器；
+//   2. Agent 侧 config.allowed_origins 对 descriptor.server 二次校验。
+// 因此这里不再重复校验 sender，域名只在一处（manifest）维护。
+chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== 'open_session') return;
+  const payload = {
+    type: 'open_session',
+    protocol: message.protocol,
+    server: message.server,
+    ticket: message.ticket,
+    expires_at: message.expires_at,
+  };
+  sendNative(payload).then(sendResponse).catch((error) => sendResponse({
+    ok: false,
+    error: error.message || 'Agent rejected the session.',
+  }));
+  return true;
 });
 
+// 扩展 popup 查询 Agent 状态与已检测应用。
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'agent_status') return false;
   sendNative({ type: 'status' }).then(sendResponse).catch((error) => sendResponse({
