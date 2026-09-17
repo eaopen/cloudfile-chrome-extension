@@ -14,5 +14,5 @@
       "http://10.12.1.157:8092/*"
     ]
   },
-  "permissions": ["downloads", "nativeMessaging", "storage"]
+  "permissions": ["downloads", "nativeMessaging", "storage", "activeTab"]
 }

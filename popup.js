@@ -6,12 +6,75 @@ const openButton = document.querySelector('#open-workspace');
 const copyButton = document.querySelector('#copy-workspace');
 const workspaceHint = document.querySelector('#workspace-hint');
 const helpButton = document.querySelector('#help');
+const helpHint = document.querySelector('#help-hint');
 
 let workspaceRoot = '';
 
 const HELP_PATH = 'cloudfile/local-app-help/';
 
+// siteRoot 默认值：与后端 SITE_ROOT 环境变量对应（本部署 = /seafile/）。
+// 若 storage 里记录过会话 server（= origin + siteRoot），会优先从 server 自动
+// 推导出真实 siteRoot 覆盖此默认值，因此该常量仅在用户从未点过「本地查看/编辑」时
+// 作为兜底。
+const DEFAULT_SITE_ROOT = '/seafile/';
+
+// 域名白名单从 manifest.json 的 externally_connectable.matches 自动读取，
+// 不再在 popup.js 里硬编码，站点增删域名只需改 manifest 一处。
+function getManifestOrigins() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const matches = (manifest && manifest.externally_connectable
+      && manifest.externally_connectable.matches) || [];
+    // matches 形如 "http://host:port/*"，去掉通配尾缀得到 origin。
+    return matches
+      .map((pattern) => pattern.replace(/\/\*$/, ''))
+      .filter((origin) => /^https?:\/\//.test(origin));
+  } catch {
+    return [];
+  }
+}
+
+// 从最近一次会话的 server（origin + siteRoot，如 http://host:port/seafile）
+// 推导 siteRoot；无记录时回退到 DEFAULT_SITE_ROOT。
+async function getSiteRoot() {
+  try {
+    const stored = await chrome.storage.local.get('server');
+    const server = stored?.server || '';
+    if (server) {
+      const path = new URL(server).pathname.replace(/\/+$/, '');
+      return path ? path + '/' : '/';
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_SITE_ROOT;
+}
+
+function toOrigin(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+
+async function currentTabUrl() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return (tab && tab.url) || '';
+}
+
 helpButton.addEventListener('click', async () => {
+  const origins = getManifestOrigins();
+  const activeOrigin = toOrigin(await currentTabUrl());
+
+  // 1. 当前活跃 tab 的 origin 在 manifest 白名单内 → 用该 origin + siteRoot 拼帮助页打开。
+  if (activeOrigin && origins.includes(activeOrigin)) {
+    const siteRoot = await getSiteRoot();
+    chrome.tabs.create({ url: activeOrigin + siteRoot + HELP_PATH });
+    return;
+  }
+
+  // 2. 不在白名单域名内，但之前记录过会话 server（origin + siteRoot）→ 兜底打开。
   let base = '';
   try {
     const stored = await chrome.storage.local.get('server');
@@ -19,14 +82,13 @@ helpButton.addEventListener('click', async () => {
   } catch {
     base = '';
   }
-  if (!base) {
-    showHint('请先在 CloudFile 网页点击一次「本地查看/本地编辑」，扩展即可记住帮助页地址；或直接在浏览器访问站点下的 /seafile/cloudfile/local-app-help/ 页面。');
+  if (base) {
+    chrome.tabs.create({ url: base.replace(/\/+$/, '') + '/' + HELP_PATH });
     return;
   }
-  // server 形如 http://host:port/seafile（站点 origin + siteRoot），
-  // 帮助页挂在 siteRoot 下，故拼接相对路径即可。
-  const url = base.replace(/\/+$/, '') + '/' + HELP_PATH;
-  chrome.tabs.create({ url });
+
+  // 3. 两者都没有 → 引导用户先进入网盘页面。
+  showHelpHint('请先在浏览器中打开 CloudFile 网盘页面，再从该页面点击扩展图标打开安装帮助。');
 });
 
 chrome.runtime.sendMessage({ type: 'agent_status' }, (result) => {
@@ -77,4 +139,9 @@ copyButton.addEventListener('click', async () => {
 function showHint(text) {
   workspaceHint.hidden = false;
   workspaceHint.textContent = text;
+}
+
+function showHelpHint(text) {
+  helpHint.hidden = false;
+  helpHint.textContent = text;
 }
