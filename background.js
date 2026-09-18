@@ -1,7 +1,66 @@
 const HOST = 'com.cloudfile.local_agent';
 
+// 扩展自身更新清单的静态地址（与 Agent 的 update.json 同目录约定）。
+// 该常量默认指向站点静态服务；上线时改这里一处即可。
+const EXTENSION_UPDATE_URL = 'http://10.9.8.162:6111/cloudfile-updates/extension-update.json';
+const ALARM_NAME = 'extension-update-check';
+
 async function sendNative(message) {
   return chrome.runtime.sendNativeMessage(HOST, message);
+}
+
+// 每日检查一次扩展更新清单，结果写入 storage 供 popup 展示。
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_NAME) {
+    checkExtensionUpdate().catch(() => {});
+  }
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1440 });
+  checkExtensionUpdate().catch(() => {});
+});
+
+// 兼容：旧版本已注册 alarm 的情况下，确保 alarm 存在（onInstalled 只在安装/更新时触发）。
+if (chrome.runtime.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    chrome.alarms.get(ALARM_NAME).then((existing) => {
+      if (!existing) chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1440 });
+    });
+    checkExtensionUpdate().catch(() => {});
+  });
+}
+
+async function checkExtensionUpdate() {
+  const current = chrome.runtime.getManifest().version;
+  try {
+    const response = await fetch(EXTENSION_UPDATE_URL, { cache: 'no-store' });
+    if (!response.ok) return;
+    const manifest = await response.json();
+    if (!manifest?.version) return;
+    const update = {
+      checked_at: Date.now(),
+      current_version: current,
+      latest_version: manifest.version,
+      notes: manifest.notes || '',
+      zip_url: manifest.zip_url || '',
+      has_update: versionNewer(manifest.version, current),
+    };
+    await chrome.storage.local.set({ extension_update: update });
+  } catch {
+    // 网络失败静默忽略，下次 alarm 再试。
+  }
+}
+
+function versionNewer(latest, current) {
+  const parse = (value) => String(value).split('.').map((part) => parseInt(part, 10) || 0);
+  const a = parse(latest);
+  const b = parse(current);
+  for (let i = 0; i < 3; i++) {
+    if (a[i] > b[i]) return true;
+    if (a[i] < b[i]) return false;
+  }
+  return false;
 }
 
 // 网页 → 扩展 → 本地 Agent 的消息通道。

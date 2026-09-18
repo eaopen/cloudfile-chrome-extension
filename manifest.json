@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CloudFile Local Session Receiver",
   "description": "Passes downloaded CloudFile session files to the signed local agent.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "action": {
     "default_title": "CloudFile Local",
     "default_popup": "popup.html"
@@ -14,5 +14,5 @@
       "http://10.12.1.157:8092/*"
     ]
   },
-  "permissions": ["downloads", "nativeMessaging", "storage", "activeTab"]
+  "permissions": ["downloads", "nativeMessaging", "storage", "activeTab", "alarms"]
 }
