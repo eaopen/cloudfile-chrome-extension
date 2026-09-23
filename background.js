@@ -74,6 +74,31 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
     sendResponse({ ok: true });
     return false;
   }
+  if (message?.type === 'query_local_file') {
+    // 网页在发起本地编辑前查询本地缓存状态（是否存在 / hash / 大小 / 时间），
+    // 用于渲染「覆盖本地 / 保留本地」冲突弹窗。
+    sendNative({
+      type: 'query_local_file',
+      repo_id: message.repo_id,
+      path: message.path,
+    }).then(sendResponse).catch((error) => sendResponse({
+      ok: false,
+      error: error.message || 'Agent rejected the query.',
+    }));
+    return true;
+  }
+  if (message?.type === 'open_workspace') {
+    // 网页请求打开某个库/目录的本地镜像目录，供用户手动上传本地改动。
+    sendNative({
+      type: 'open_workspace',
+      repo_id: message.repo_id,
+      path: message.path || '',
+    }).then(sendResponse).catch((error) => sendResponse({
+      ok: false,
+      error: error.message || 'Agent rejected the open.',
+    }));
+    return true;
+  }
   if (message?.type !== 'open_session') return;
   // 记录最近一次会话的 server，供 popup 的「帮助」按钮拼出帮助页地址。
   if (message.server) {
@@ -85,6 +110,7 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
     server: message.server,
     ticket: message.ticket,
     expires_at: message.expires_at,
+    local_action: message.local_action || '',
   };
   sendNative(payload).then(sendResponse).catch((error) => sendResponse({
     ok: false,
