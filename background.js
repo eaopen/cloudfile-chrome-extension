@@ -1,4 +1,5 @@
 const HOST = 'com.cloudfile.local_agent';
+const CURRENT_HOST = 'com.cloudfile.current_agent';
 
 // 扩展自身更新清单的静态地址（与 Agent 的 update.json 同目录约定）。
 // 该常量默认指向站点静态服务；上线时改这里一处即可。
@@ -69,10 +70,26 @@ function versionNewer(latest, current) {
 //      只允许白名单域名调用本监听器；
 //   2. Agent 侧 config.allowed_origins 对 descriptor.server 二次校验。
 // 因此这里不再重复校验 sender，域名只在一处（manifest）维护。
-chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   if (message?.type === 'ping') {
     sendResponse({ ok: true });
     return false;
+  }
+  if (message?.type === 'open_uri') {
+    // The v0.3 bridge only accepts a bounded URI from a TLS page. The native
+    // host checks canonical syntax and current-user pairing before GUI launch.
+    let securePage = false;
+    try { securePage = new URL(sender.url).protocol === 'https:'; } catch { /* reject */ }
+    if (!securePage || typeof message.uri !== 'string' || message.uri.length > 2048 ||
+        !message.uri.startsWith('cloudfile-open://v1/open?')) {
+      sendResponse({ ok: false, error: '本地打开请求无效或页面未使用 HTTPS' });
+      return false;
+    }
+    chrome.runtime.sendNativeMessage(CURRENT_HOST, { type: 'open_uri', uri: message.uri }).then(sendResponse).catch(() => sendResponse({
+      ok: false,
+      error: '本机 Agent 未就绪',
+    }));
+    return true;
   }
   if (message?.type === 'query_local_file') {
     // 网页在发起本地编辑前查询本地缓存状态（是否存在 / hash / 大小 / 时间），
@@ -122,10 +139,10 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
 // 扩展 popup 查询 Agent 状态与已检测应用。
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'agent_status') {
-    sendNative({ type: 'status' }).then(sendResponse).catch((error) => sendResponse({
-      ok: false,
-      error: error.message,
-    }));
+    chrome.runtime.sendNativeMessage(CURRENT_HOST, { type: 'status' })
+      .then((result) => result?.ok ? result : sendNative({ type: 'status' }))
+      .catch(() => sendNative({ type: 'status' }))
+      .then(sendResponse).catch(() => sendResponse({ ok: false, error: '本机 Agent 未就绪' }));
     return true;
   }
   if (message?.type === 'open_workspace') {

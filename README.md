@@ -6,6 +6,8 @@
 
 这是一个 Manifest V3 扩展：仅监听下载完成的 `.cloudfile` 会话文件（含 Hub 生成的 `blob:` 下载），并使用 Native Messaging 将文件路径交给本机 Agent。没有 Cookie、网页注入、localhost、网页数据采集或 Seafile Token 权限；Agent 会独立验证会话中的受信任服务端 origin 与一次性票据。
 
+v0.3 正式库入口额外使用 `open_uri` 消息，通过独立的 `com.cloudfile.current_agent` Host 启动已配对的 .NET Windows Agent。该入口只接受 HTTPS 网页发来的有界 URI；Host 再核当前用户配对和规范 URI，GUI 仍要求用户确认。旧 `.cloudfile`/Go Host 保持独立；本地保存后的文件只由用户在 Web 手动上传，不由新 Host 监听或回传。
+
 该扩展只负责会话文件交接，不实现文件预览、编辑或应用检测；这些职责属于本地 Agent
 和用户安装的软件。整体能力状态见[扩展能力矩阵](../cloudfile-docker/docs/feature-matrix.md)。
 
