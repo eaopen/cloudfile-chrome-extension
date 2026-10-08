@@ -2,8 +2,9 @@ const HOST = 'com.cloudfile.local_agent';
 const CURRENT_HOST = 'com.cloudfile.current_agent';
 
 // 扩展自身更新清单的静态地址（与 Agent 的 update.json 同目录约定）。
-// 该常量默认指向站点静态服务；上线时改这里一处即可。
-const EXTENSION_UPDATE_URL = 'http://10.9.8.162:6111/cloudfile-updates/extension-update.json';
+// 地址固定指向门户域名，由该域名上的 nginx 把 /cloudfile-updates/ 反代到实际静态服务；
+// 静态服务换 IP/端口时只改 nginx，客户端产物无需重新发版。
+const EXTENSION_UPDATE_URL = 'http://etech.stcetech.ad01.sec.com/cloudfile-updates/extension-update.json';
 const ALARM_NAME = 'extension-update-check';
 
 async function sendNative(message) {
@@ -94,10 +95,13 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   if (message?.type === 'query_local_file') {
     // 网页在发起本地编辑前查询本地缓存状态（是否存在 / hash / 大小 / 时间），
     // 用于渲染「覆盖本地 / 保留本地」冲突弹窗。
+    // mode 决定查哪个子树（本地查看 view / 本地编辑 edit）；缺省时
+    // Agent 按可编辑子树处理。
     sendNative({
       type: 'query_local_file',
       repo_id: message.repo_id,
       path: message.path,
+      mode: message.mode || '',
     }).then(sendResponse).catch((error) => sendResponse({
       ok: false,
       error: error.message || 'Agent rejected the query.',
@@ -110,6 +114,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       type: 'open_workspace',
       repo_id: message.repo_id,
       path: message.path || '',
+      mode: message.mode || '',
     }).then(sendResponse).catch((error) => sendResponse({
       ok: false,
       error: error.message || 'Agent rejected the open.',
