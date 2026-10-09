@@ -26,7 +26,31 @@ Chrome Web Store 接受未签名的 MV3 目录 zip，签名（打包成 `.crx`�
 ./scripts/package.sh
 ```
 
-产出 `dist/cloudfile-local-session-receiver-<version>.zip`，只含 manifest 与四个资源文件
-（不含 README、脚本与 dotfile）。上传：Chrome Web Store Developer Dashboard →
+产出 `dist/cloudfile-local-session-receiver-<version>.zip`，只含 manifest、四个资源文件与
+`icons/` 图标（不含 README、脚本与 dotfile）。上传：Chrome Web Store Developer Dashboard →
 New item → 上传 zip → 提交审核。发布后的扩展 ID 固定，用户侧的 Native Host
 `allowed_origins` 改用该 ID（`chrome-extension://<id>/`），不再依赖开发者模式。
+
+## 自动升级（1.0.0 起）
+
+- **检测**：浏览器启动时 + 每 6 小时，向本地 Agent 发 `check_update`（带上本扩展版本），
+  Agent 一次回答两侧的版本与 `min_version`。**不依赖跨源 `fetch`，因此不需要 nginx 配 CORS**；
+  只有 Agent 不可用时才退回直连 `extension-update.json`。
+- **提示**：有待升级项就亮工具条角标（显示待升级项数量）；某个新版本**首次**出现时弹一条系统通知，
+  扩展与 Agent 合并成一条，同一版本不重复弹。点开 popup 即视为已读并清角标。
+- **一键升级**：popup 的「立即升级 Agent」→ Agent 发 `update` 消息；「立即升级扩展」→
+  Agent 发 `update_extension` 消息（下载 zip、校验 SHA256、解压替换 `%LocalAppData%\CloudFileLocal\extension`）。
+  两者都由后台子进程完成，扩展随后轮询确认，扩展侧确认落盘版本追平后调用 `chrome.runtime.reload()` 生效。
+- **失败可见**：请求返回只代表「已开始」。若 5 分钟内版本仍未追平，会弹「自动升级未完成」并让该版本重新可提醒。
+  后台升级日志：`%LocalAppData%\CloudFileLocal\update.log`（detached 进程没有控制台）。
+- **更新只是提示**：不设 `min_version` 之类的强制门禁，版本比较永远不会拦下本地功能；
+  发布 JSON 里即使带着该字段也会被忽略。
+
+## 自测
+
+```bash
+node --test tests/open-uri.cjs tests/update-indicators.cjs
+```
+
+`tests/chrome-mock.cjs` 在 VM 里用假的 `chrome` 加载 `background.js`，可直接断言角标、
+系统通知、native 调用与 storage 的变化。

@@ -13,6 +13,7 @@ out="dist/cloudfile-local-session-receiver-${version}.zip"
 
 mkdir -p dist
 rm -f "$out"
-zip -q -X "$out" manifest.json background.js popup.js popup.html popup.css
+zip -q -X "$out" manifest.json background.js popup.js popup.html popup.css \
+  icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png
 
 echo "$out"
