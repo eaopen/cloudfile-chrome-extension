@@ -528,6 +528,38 @@ async function handleInternal(message) {
   if (message?.type === 'open_workspace') {
     return routeNative('open_workspace', { type: 'open_workspace' });
   }
+  // v0.8: browser-side UI only. Existing Host versions do not advertise this
+  // capability, so the popup never exposes or invokes it during v0.7.
+  if (message?.type === 'agent_task_summary') {
+    const selected = await preferredNative('task_summary');
+    if (!selected?.status?.capabilities?.includes('task_summary'))
+      return { ok: false, error: '当前 Agent 尚未启用本地任务查询。' };
+    const response = await routeNative('task_summary', { type: 'task_summary' });
+    if (!response?.ok || !Array.isArray(response.tasks))
+      return { ok: false, error: '任务摘要不可用。' };
+    // Host owns all authorization and filtering. Browser never receives the
+    // working-copy path, Lease, device ID, session ID or pending Intent.
+    return {
+      ok: true,
+      tasks: response.tasks.slice(0, 50).filter(task => task && typeof task === 'object').map(task => ({
+        task_id: typeof task.task_id === 'string' && /^[0-9a-f]{64}$/.test(task.task_id)
+          ? task.task_id : '',
+        file_name: typeof task.file_name === 'string' ? task.file_name.slice(0, 160) : '本地文件',
+        mode: task.mode === 'exclusive-edit' ? 'exclusive-edit' : 'local-edit',
+        local_changed: task.local_changed === true,
+        needs_review: task.needs_review === true,
+      })),
+    };
+  }
+  if (message?.type === 'agent_focus_task') {
+    if (typeof message.task_id !== 'string' || !/^[0-9a-f]{64}$/.test(message.task_id))
+      return { ok: false, error: '任务编号无效。' };
+    const selected = await preferredNative('focus_task');
+    if (!selected?.status?.capabilities?.includes('focus_task'))
+      return { ok: false, error: '当前 Agent 不支持定位任务。' };
+    const reply = await routeNative('focus_task', { type: 'focus_task', task_id: message.task_id });
+    return reply?.ok === true ? { ok: true } : { ok: false, error: '无法定位任务，请在 Agent 中查看。' };
+  }
   return undefined;
 }
 

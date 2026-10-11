@@ -12,3 +12,6 @@
 .update-status{margin:8px 0 0;font-size:11px;line-height:1.5;color:#3f5a10;white-space:pre-line}
 /* 这些元素自身设了 display，会盖过 [hidden] 的 UA 样式，必须显式关掉。 */
 .update[hidden],.update-command[hidden],.update-actions[hidden],.update-status[hidden]{display:none}
+
+/* v0.8 capability-gated task summaries; no action modifies the cloud file. */
+.task-row{display:flex;justify-content:space-between;align-items:center;gap:7px;border-top:1px solid var(--line);padding:7px 0;font-size:11px;overflow-wrap:anywhere}.task-row span{flex:1;min-width:0}.task-row button{font:inherit;font-size:11px;background:var(--lime);border:1px solid var(--ink);padding:3px 7px;cursor:pointer}.task-row button:hover{background:#d0f598}

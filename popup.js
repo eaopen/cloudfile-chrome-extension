@@ -7,6 +7,8 @@ const copyButton = document.querySelector('#copy-workspace');
 const workspaceHint = document.querySelector('#workspace-hint');
 const helpButton = document.querySelector('#help');
 const helpHint = document.querySelector('#help-hint');
+const taskCenter = document.querySelector('#task-center');
+const taskSummary = document.querySelector('#task-summary');
 const updateSection = document.querySelector('#update');
 const updateText = document.querySelector('#update-text');
 const updateCommand = document.querySelector('#update-command');
@@ -109,11 +111,61 @@ chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
       }
     }
     renderAgentUpdate(result);
+    if (Array.isArray(result.capabilities) && result.capabilities.includes('task_summary')) {
+      taskCenter.hidden = false;
+      renderTaskSummary(result.capabilities.includes('focus_task'));
+    }
   }
   // 扩展侧的状态由后台探测后落库，这里直接读，保证与 Agent 侧同一次探测结果。
   await renderExtensionUpdate();
   renderUpdateSection();
 });
+
+// P0 read-only task summary. Never expose local absolute paths, credentials,
+// native intents or an upload button. Not advertised until a trusted Host opts in.
+function renderTaskSummary(canFocus) {
+  chrome.runtime.sendMessage({ type: 'agent_task_summary' }, (result) => {
+    taskSummary.replaceChildren();
+    const message = document.createElement('p');
+    message.className = 'workspace-hint';
+    if (chrome.runtime.lastError || !result?.ok) {
+      message.textContent = '任务摘要暂不可用，请通过 Agent 任务中心查看。';
+      taskSummary.append(message);
+      return;
+    }
+    const tasks = result.tasks || [];
+    message.textContent = tasks.length ? '由 Agent 管理的本地文件任务：' : '当前没有本地编辑任务。';
+    taskSummary.append(message);
+    for (const task of tasks.slice(0, 5)) {
+      const row = document.createElement('div');
+      row.className = 'task-row';
+      const title = document.createElement('span');
+      const state = task.needs_review ? '需要检查' :
+        task.local_changed ? '已修改，待确认上传' : '编辑中';
+      title.textContent = String(task.file_name || '本地文件') + ' · ' + state;
+      row.append(title);
+      if (canFocus && /^[0-9a-f]{64}$/.test(task.task_id || '')) {
+        const focus = document.createElement('button');
+        focus.type = 'button';
+        focus.textContent = '定位';
+        focus.addEventListener('click', () => {
+          chrome.runtime.sendMessage({ type: 'agent_focus_task', task_id: task.task_id }, (reply) => {
+            if (chrome.runtime.lastError || !reply?.ok)
+              message.textContent = '无法定位该任务，请打开 Agent 任务中心。';
+          });
+        });
+        row.append(focus);
+      }
+      taskSummary.append(row);
+    }
+    if (tasks.length > 5) {
+      const more = document.createElement('p');
+      more.className = 'workspace-hint';
+      more.textContent = '更多任务请在 Agent 的独立任务中心查看。';
+      taskSummary.append(more);
+    }
+  });
+}
 
 function renderAgentUpdate(result) {
   if (!result.update_available) return;
