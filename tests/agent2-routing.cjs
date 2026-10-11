@@ -86,3 +86,24 @@ test('new extension retains old Agent1 update probe without forcing a downgrade'
   assert.equal(b.store.agent_update?.current_version,'1.0.1');
   assert.equal(b.store.extension_update?.latest_version,'1.0.1');
 });
+
+test('fresh Windows 1.2.1 Go install never replaces a working .NET Host before origin pairing',async()=>{
+  const b=loadBackground({native:async(host,msg)=>{
+    if(host===NEW && msg.type==='status') return {
+      ok:true,version:'2.0.1',agent_family:'agent2',platform:'windows',
+      capabilities:['check_update']
+    };
+    if(host===WINDOWS&&msg.type==='status') return {
+      ok:true,version:'1.2.1',agent_family:'agent1',capabilities:['open_uri']
+    };
+    if(host===OLD_GO&&msg.type==='status') throw Error('Go 1.x not installed');
+    return {ok:true};
+  }});
+  const status=await b.sendInternal({type:'agent_status'});
+  assert.equal(status.selected_family,'agent1');
+  const uri=await b.sendExternal({type:'open_uri',uri:'cloudfile-open://v1/open?ticket=abc'});
+  assert.equal(uri.ok,true);
+  const session=await b.sendExternal({type:'open_session',ticket:'one-use'});
+  assert.equal(session.ok,false);
+  assert.deepEqual(actionCalls(b).map(call=>call.host),[WINDOWS]);
+});
