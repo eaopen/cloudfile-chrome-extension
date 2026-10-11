@@ -17,9 +17,11 @@ test('HTTPS page hands a bounded URI to the fixed native host', async () => {
   );
   await settle();
   assert.equal(reply.ok, true);
-  assert.equal(background.nativeCalls.length, 1);
-  assert.equal(background.nativeCalls[0].host, 'com.cloudfile.current_agent');
-  assert.equal(background.nativeCalls[0].message.type, 'open_uri');
+  // Read-only capability probes are expected; the real action is dispatched once.
+  const actions = background.nativeCalls.filter(call => call.message.type !== 'status');
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].host, 'com.cloudfile.current_agent');
+  assert.equal(actions[0].message.type, 'open_uri');
 });
 
 test('an insecure page or unbounded payload never reaches the native host', async () => {

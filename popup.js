@@ -89,7 +89,9 @@ chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
     status.textContent = `Agent 未就绪：${result?.error ?? '请执行绿色包中的注册脚本。'}`;
     status.className = 'status error';
   } else {
-    status.textContent = `Agent 已就绪 · v${result.version}`;
+    const agentName = result.selected_family === "agent2" ? "Agent2" :
+    result.selected_family === "agent1" ? "Windows Agent1" : "Go Agent 1.x";
+  status.textContent = `${agentName} 已就绪 · v${result.version}`;
     status.className = 'status ready';
     // 固定展示支持的本地文件类型，不随本机实际安装的软件版本变化。
     applications.hidden = false;

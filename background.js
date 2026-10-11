@@ -1,5 +1,6 @@
-const HOST = 'com.cloudfile.local_agent';
-const CURRENT_HOST = 'com.cloudfile.current_agent';
+const AGENT2_HOST = 'com.cloudfile.agent2';
+const HOST = 'com.cloudfile.local_agent'; // Legacy Go 1.x
+const CURRENT_HOST = 'com.cloudfile.current_agent'; // Windows Agent1/.NET
 
 // 扩展自身更新清单的静态地址（与 Agent 的 update.json 同目录约定）。
 // 地址固定指向门户域名，由该域名上的 nginx 把 /cloudfile-updates/ 反代到实际静态服务；
@@ -22,6 +23,53 @@ const HELP_PATH = '/cloudfile-updates/help.html';
 
 async function sendNative(message) {
   return chrome.runtime.sendNativeMessage(HOST, message);
+}
+
+// Agent2 is preferred only for operations it explicitly advertises.
+// Never resend a consumed session ticket to a second host after an unknown
+// result: switching Host IDs is only allowed BEFORE the first action.
+const LEGACY_GO_OPERATIONS = new Set([
+  'open_session', 'query_local_file', 'query_local_folder', 'open_workspace',
+]);
+async function readNativeStatus(host) {
+  try {
+    const status = await chrome.runtime.sendNativeMessage(host, { type: 'status' });
+    return status?.ok === true ? status : null;
+  } catch { return null; }
+}
+function supportsAgent2(status, type) {
+  return status?.agent_family === 'agent2' &&
+    /^2\.[0-9]+\.[0-9]+$/.test(status.version || '') &&
+    Array.isArray(status.capabilities) && status.capabilities.includes(type);
+}
+async function preferredNative(type) {
+  const newer = await readNativeStatus(AGENT2_HOST);
+  if (supportsAgent2(newer, type) ||
+      (type === 'status' && supportsAgent2(newer, 'open_session'))) {
+    return { host: AGENT2_HOST, status: newer, family: 'agent2' };
+  }
+  if (type === 'open_uri' || type === 'status') {
+    const windows = await readNativeStatus(CURRENT_HOST);
+    if (windows) return { host: CURRENT_HOST, status: windows, family: 'agent1' };
+  }
+  if (type === 'status' || LEGACY_GO_OPERATIONS.has(type)) {
+    const olderGo = await readNativeStatus(HOST);
+    if (olderGo) return { host: HOST, status: olderGo, family: 'legacy-go' };
+  }
+  return null;
+}
+async function routeNative(type, payload) {
+  const selected = await preferredNative(type);
+  if (!selected) return { ok: false, error: '没有安装支持此操作的 Agent2 或 Windows Agent1。' };
+  if (type === 'status') {
+    return { ...selected.status, selected_host: selected.host, selected_family: selected.family };
+  }
+  try {
+    const response = await chrome.runtime.sendNativeMessage(selected.host, payload);
+    return response ?? { ok: false, error: 'Agent 结果未知，请查询原会话状态。' };
+  } catch (error) {
+    return { ok: false, error: (error?.message || 'Agent 响应未知') + '；不会跨 Host 自动重试。' };
+  }
 }
 
 // 优先当前 Host，失败再回退旧 Host（与 popup 的既有行为一致）。
@@ -55,12 +103,8 @@ async function probeAgent() {
 // popup 需要的是完整状态（本地目录、可执行文件路径、已装应用），而 check_update
 // 是刻意的轻量消息、不带这些字段 —— 所以这里必须直接问 status。
 async function probeAgentStatus() {
-  try {
-    const result = await sendWithHostFallback({ type: 'status' });
-    return result?.ok ? result : null;
-  } catch {
-    return null;
-  }
+  const result = await routeNative('status', { type: 'status' });
+  return result?.ok ? result : null;
 }
 
 // 扩展被 reload / 更新后 alarm 会被清掉（Chrome 只在浏览器重启时保留它们），
@@ -401,14 +445,14 @@ async function handleExternal(message, sender) {
         !message.uri.startsWith('cloudfile-open://v1/open?')) {
       return { ok: false, error: '本地打开请求无效或页面未使用 HTTPS' };
     }
-    return chrome.runtime.sendNativeMessage(CURRENT_HOST, { type: 'open_uri', uri: message.uri });
+    return routeNative('open_uri', { type: 'open_uri', uri: message.uri });
   }
 
   if (message?.type === 'query_local_file') {
     // 网页在发起本地编辑前查询本地缓存状态（是否存在 / hash / 大小 / 时间），
     // 用于渲染「覆盖本地 / 保留本地」冲突弹窗。
     // mode 决定查哪个子树（本地查看 view / 本地编辑 edit）；缺省时 Agent 按可编辑子树处理。
-    return sendNative({
+    return routeNative('query_local_file', {
       type: 'query_local_file',
       repo_id: message.repo_id,
       path: message.path,
@@ -418,7 +462,7 @@ async function handleExternal(message, sender) {
   if (message?.type === 'query_local_folder') {
     // 网页在渲染「打开本地目录」入口前问一句：这个资料库的本地目录建了没有。
     // 镜像是一库一个平铺目录，所以「存在」就等于用户在这里做过一次本地编辑。
-    return sendNative({
+    return routeNative('query_local_folder', {
       type: 'query_local_folder',
       repo_id: message.repo_id,
       mode: message.mode || '',
@@ -426,7 +470,7 @@ async function handleExternal(message, sender) {
   }
   if (message?.type === 'open_workspace') {
     // 网页请求打开某个库/目录的本地镜像目录，供用户手动上传本地改动。
-    return sendNative({
+    return routeNative('open_workspace', {
       type: 'open_workspace',
       repo_id: message.repo_id,
       path: message.path || '',
@@ -438,7 +482,7 @@ async function handleExternal(message, sender) {
   if (message.server) {
     chrome.storage.local.set({ server: message.server }).catch(() => {});
   }
-  return sendNative({
+  return routeNative('open_session', {
     type: 'open_session',
     protocol: message.protocol,
     server: message.server,
@@ -479,7 +523,7 @@ async function handleInternal(message) {
     return startUpgrade(message.kind);
   }
   if (message?.type === 'open_workspace') {
-    return sendNative({ type: 'open_workspace' });
+    return routeNative('open_workspace', { type: 'open_workspace' });
   }
   return undefined;
 }
@@ -493,12 +537,14 @@ async function startUpgrade(kind) {
       if (!extension_update?.latest_version) {
         return { ok: false, error: '暂时拿不到扩展的更新信息，请稍后再试或重跑 register-windows.ps1。' };
       }
-      await sendNative({ type: 'update_extension' });
+      const accepted = await sendNative({ type: 'update_extension' });
+      if (accepted?.ok !== true) return { ok: false, error: accepted?.error || '扩展升级未获得 Agent 确认。' };
       await scheduleUpgradeVerify('extension', extension_update.latest_version);
       return { ok: true };
     }
     const { agent_update } = await chrome.storage.local.get('agent_update');
-    await sendNative({ type: 'update' });
+    const accepted = await sendNative({ type: 'update' });
+    if (accepted?.ok !== true) return { ok: false, error: accepted?.error || 'Agent 升级未获得确认。' };
     await scheduleUpgradeVerify('agent', agent_update?.latest_version || '');
     return { ok: true };
   } catch (error) {

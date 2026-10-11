@@ -49,8 +49,19 @@ New item → 上传 zip → 提交审核。发布后的扩展 ID 固定，用户
 ## 自测
 
 ```bash
-node --test tests/open-uri.cjs tests/update-indicators.cjs
+node --test tests/*.cjs
 ```
 
 `tests/chrome-mock.cjs` 在 VM 里用假的 `chrome` 加载 `background.js`，可直接断言角标、
 系统通知、native 调用与 storage 的变化。
+
+## Agent2 优先路由与 Agent1 兼容（扩展 1.0.1，2026-10-11）
+
+扩展保留 1.0.0 已上线方向的**一键升级、6 小时检查、角标/通知**，新增三 Host 能力发现：
+- `com.cloudfile.agent2`：Go Agent2 2.0.1，macOS 原生 Go 主程序、Windows .NET Agent1 并行的 Go 能力组件。status 须明确 `agent_family=agent2`、2.x 版本及对应 `capabilities`，才会被用于相关操作。
+- `com.cloudfile.current_agent`：Windows .NET Agent1 1.x。由于 Go2 尚未具备同等本地配对 `open_uri` 能力，Windows 的 `open_uri` 仍交此 Host。
+- `com.cloudfile.local_agent`：旧 Go 1.x，保留原 `open_session`、缓存查询和打开工作区的兼容回退。
+
+**选择优先级在实际动作发出前决定**；发送成功、错误或响应未知时，均不向另一个 Host 重发同一 session ticket。浏览器不代理未经设备签名和独占服务端授权的 `Commit`，并不把未接线的 Go2 独占上传列为可用。Agent2 的 2.x 升级发布与签名链未来单独实现，当前 1.x 静态更新机制不自动升级到 2.x。
+
+`dev` 同时支持 Windows 与 macOS；Agent1 的 .NET 维护分支在 `eap-cloudfile:agent1`。Mac/Windows Agent2 两个平台各自的非管理员注册脚本在 `cloudfile-local-agent/scripts/`，不会修改现有 Agent1 的注册表或安装目录。新版回归：`node --test tests/*.cjs`，并使用 `./scripts/package.sh` 构建扩展压缩包。此处为构建/模拟回归，**不是已完成发布或 Windows 实机验收**。

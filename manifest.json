@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxYoDNhmWZZE/J/XKXecvPb8Wf4BlLs2sWtZdy/qD7/Ai4pvrDokboxMYwC/oHxs30RQ3nUtgaNftj0+sbRD7iiHjorHjjruKYDpbf/ZRNmv0s37vt9tEt+RTqDIY8r6P0hw7Xrv9OzqfQeGqK1cKPTDTVzgv2oV4wjAKvdiKOz0POnBJsnVMHTqVfwJxvRndj/BQntGhnEj4sQ/pGHooRTRIyl/IY6B1Hgx0EhPFmOYxdoCYUhoGlQxiE8FkQz6soBzStNtUcCnfdMEbNrM8Vh2QuxdpOkhBv8Y1fdiCHk4Zr9GXyGRNw4uiKFExXK2rQoeuj52sX31hAnlEDsO/AwIDAQAB",
   "name": "CloudFile Local Session Receiver",
-  "description": "Connects CloudFile local opening to a paired Windows Agent.",
-  "version": "1.0.0",
+  "description": "CloudFile Agent2-first connector, compatible with Windows Agent1.",
+  "version": "1.0.1",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
