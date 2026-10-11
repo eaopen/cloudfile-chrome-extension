@@ -6,12 +6,12 @@
 
 这是一个 Manifest V3 扩展：仅监听下载完成的 `.cloudfile` 会话文件（含 Hub 生成的 `blob:` 下载），并使用 Native Messaging 将文件路径交给本机 Agent。没有 Cookie、网页注入、localhost、网页数据采集或 Seafile Token 权限；Agent 会独立验证会话中的受信任服务端 origin 与一次性票据。
 
-v0.3 正式库入口额外使用 `open_uri` 消息，通过独立的 `com.cloudfile.current_agent` Host 启动已配对的 .NET Windows Agent。该入口只接受 HTTPS 网页发来的有界 URI；Host 再核当前用户配对和规范 URI，GUI 仍要求用户确认。旧 `.cloudfile`/Go Host 保持独立；本地保存后的文件只由用户在 Web 手动上传，不由新 Host 监听或回传。
+v0.3 正式库入口额外使用 `open_uri` 消息，通过 Windows 固定的 `com.cloudfile.current_agent` Host 启动已配对的 .NET Windows Agent。该入口只接受 HTTPS 网页发来的有界 URI；Host 再核当前用户配对和规范 URI，GUI 仍要求用户确认。当前 dev 中 Windows 的所有操作均使用这一 Host，macOS 保留 Go Host；本地保存后的文件只由用户在 Web 手动上传，不由新 Host 监听或回传。
 
 该扩展只负责会话文件交接，不实现文件预览、编辑或应用检测；这些职责属于本地 Agent
 和用户安装的软件。整体能力状态见[扩展能力矩阵](../cloudfile-docker/docs/feature-matrix.md)。
 
-在 Chrome 打开 `chrome://extensions`，启用「开发者模式」，点击「加载已解压的扩展程序」，选择本目录。复制扩展 ID，并使用 Agent 的 `register-windows.ps1` 将该 ID 写入 Native Host 的 `allowed_origins`。
+在 Chrome 打开 `chrome://extensions`，启用「开发者模式」，点击「加载已解压的扩展程序」，选择本目录。复制扩展 ID，Windows 用统一包的 `register-native-host.ps1`、macOS 用 `register-agent2-macos.sh` 将该 ID 写入对应 Host 的 `allowed_origins`。
 
 弹窗中的「自动打开会话」默认开启，可随时关闭。关闭后会话文件仍下载，但扩展不会启动任何本地程序；重新开启后仅处理之后完成下载的会话文件。
 
@@ -55,13 +55,12 @@ node --test tests/*.cjs
 `tests/chrome-mock.cjs` 在 VM 里用假的 `chrome` 加载 `background.js`，可直接断言角标、
 系统通知、native 调用与 storage 的变化。
 
-## Agent2 优先路由与 Agent1 兼容（扩展 1.0.1，2026-10-11）
+## 平台单 Host 路由（2026-10-11）
 
-扩展保留 1.0.0 已上线方向的**一键升级、6 小时检查、角标/通知**，新增三 Host 能力发现：
-- `com.cloudfile.agent2`：Go Agent2 2.0.1，macOS 原生 Go 主程序、Windows .NET Agent1 并行的 Go 能力组件。status 须明确 `agent_family=agent2`、2.x 版本及对应 `capabilities`，才会被用于相关操作。
-- `com.cloudfile.current_agent`：Windows .NET Agent1 1.x。由于 Go2 尚未具备同等本地配对 `open_uri` 能力，Windows 的 `open_uri` 仍交此 Host。
-- `com.cloudfile.local_agent`：旧 Go 1.x，保留原 `open_session`、缓存查询和打开工作区的兼容回退。
+扩展先通过 Chrome 平台 API 判断系统：Windows 的状态、打开、查询及更新始终只发送到 `com.cloudfile.current_agent`，不探测 Go2 或旧 Go1 Host。主控为 .NET 1.2.1 或未来 Go 2.x 均使用同一 ID，浏览器不按实现语言分流。
 
-**选择优先级在实际动作发出前决定**；发送成功、错误或响应未知时，均不向另一个 Host 重发同一 session ticket。浏览器不代理未经设备签名和独占服务端授权的 `Commit`，并不把未接线的 Go2 独占上传列为可用。Agent2 的 2.x 升级发布与签名链未来单独实现，当前 1.x 静态更新机制不自动升级到 2.x。
+macOS/Linux 保留 Go `com.cloudfile.agent2`，该 Host 未安装时才兼容旧 `com.cloudfile.local_agent`；不探测 Windows Host。支持能力在实际动作前检查，动作发出后错误或结果未知不向另一 Host 重发票据。更新也走当前平台选定的 Host，不再绕到旧 Go 1.x。
 
-`dev` 同时支持 Windows 与 macOS；Agent1 的 .NET 维护分支在 `eap-cloudfile:agent1`。Mac/Windows Agent2 两个平台各自的非管理员注册脚本在 `cloudfile-local-agent/scripts/`，不会修改现有 Agent1 的注册表或安装目录。新版回归：`node --test tests/*.cjs`，并使用 `./scripts/package.sh` 构建扩展压缩包。此处为构建/模拟回归，**不是已完成发布或 Windows 实机验收**。
+Windows 1.2.1 的 Host 已接入签名整包更新和独立扩展更新，需要本机配置受信发布源、公钥及已安装扩展目录；未配置时明确返回错误。已受理不代表完成，最终按安装版本复核，并显示持久失败状态。macOS 与旧 Go 的既有更新检查、角标、通知和升级复核保留。独占 Commit/Checkin 未接通，不向网页开放。
+
+回归：`node --test tests/*.cjs`，覆盖 Windows 只调用一个 Host、缺失时不旁路、未来 Go 主控保持 ID、macOS 能力门禁、旧 Go 兼容、未知结果不重发和更新提示。此为模拟回归，Windows/macOS 实机验收另行执行。

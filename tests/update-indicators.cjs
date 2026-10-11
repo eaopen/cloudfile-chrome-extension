@@ -54,3 +54,40 @@ test('an upgrade rejected by 1.x host never falsely reports started',async()=>{
   assert.match(response.error,/blocked/);
   assert.equal(b.store.update_verify,undefined);
 });
+
+test('Windows local status retains the signed update check, then clears it after activation', async()=>{
+  let version='1.2.1';
+  const b=loadBackground({platform:'win',native:async(host,msg)=>{
+    assert.equal(host,CURRENT);
+    return {ok:true,version,controller:'dotnet',update_source_set:true};
+  }});
+  b.store.agent_update={current_version:'1.2.1',latest_version:'1.2.2',has_update:true,notes:'signed release'};
+  await b.sendInternal({type:'agent_status'});
+  assert.equal(b.store.agent_update.has_update,true);
+  assert.equal(b.store.agent_update.notes,'signed release');
+  version='1.2.2';
+  await b.sendInternal({type:'agent_status'});
+  assert.equal(b.store.agent_update.has_update,false);
+});
+
+test('Windows signed bundle worker failure ends verification without another Host', async()=>{
+  const b=loadBackground({platform:'win',native:async(host)=>{
+    assert.equal(host,CURRENT);
+    return {ok:true,version:'1.2.1',last_update_state:'failed',last_update_kind:'agent'};
+  }});
+  b.store.update_verify={kind:'agent',target:'1.2.2',attempts:0};
+  b.triggerAlarm('cloudfile-update-verify');
+  await tick();await tick();
+  assert.equal(b.store.update_verify,undefined);
+  assert.ok(b.nativeCalls.every(call=>call.host===CURRENT));
+});
+
+test('macOS updates use the selected Go2 Host and never Windows registration', async()=>{
+  const b=loadBackground({platform:'mac',native:async(host,msg)=>{
+    assert.equal(host,NEXT);
+    return {ok:true,version:'2.0.1',agent_family:'agent2',capabilities:['check_update']};
+  }});
+  b.store.agent_update={latest_version:'2.0.2',has_update:true};
+  assert.equal((await b.sendInternal({type:'upgrade',kind:'agent'})).ok,true);
+  assert.equal(b.nativeCalls.find(call=>call.message.type==='update').host,NEXT);
+});

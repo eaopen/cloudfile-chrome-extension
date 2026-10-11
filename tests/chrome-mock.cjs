@@ -12,6 +12,7 @@ function loadBackground(options = {}) {
       onMessage: { addListener(fn) { internal = fn; } },
       onInstalled: { addListener() {} },
       onStartup: { addListener() {} },
+      getPlatformInfo: async () => ({ os: options.platform || 'mac' }),
       getManifest: () => ({ version: '1.0.1' }),
       sendNativeMessage: async (host, message) => {
         nativeCalls.push({ host, message });

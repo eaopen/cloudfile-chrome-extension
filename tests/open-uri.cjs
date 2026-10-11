@@ -10,7 +10,7 @@ test('a ping is answered synchronously', () => {
 });
 
 test('HTTPS page hands a bounded URI to the fixed native host', async () => {
-  const background = loadBackground({ currentHostMissing: false });
+  const background = loadBackground({ platform: 'win', currentHostMissing: false });
   const reply = await background.sendExternal(
     { type: 'open_uri', uri: 'cloudfile-open://v1/open?ticket=a' },
     { url: 'https://etech.example/file' },
