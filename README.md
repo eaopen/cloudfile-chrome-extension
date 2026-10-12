@@ -6,7 +6,7 @@
 
 这是一个 Manifest V3 扩展：仅监听下载完成的 `.cloudfile` 会话文件（含 Hub 生成的 `blob:` 下载），并使用 Native Messaging 将文件路径交给本机 Agent。没有 Cookie、网页注入、localhost、网页数据采集或 Seafile Token 权限；Agent 会独立验证会话中的受信任服务端 origin 与一次性票据。
 
-v0.3 正式库入口额外使用 `open_uri` 消息，通过 Windows 固定的 `com.cloudfile.current_agent` Host 启动已配对的 .NET Windows Agent。该入口只接受 HTTPS 网页发来的有界 URI；Host 再核当前用户配对和规范 URI，GUI 仍要求用户确认。当前 dev 中 Windows 的所有操作均使用这一 Host，macOS 保留 Go Host；本地保存后的文件只由用户在 Web 手动上传，不由新 Host 监听或回传。
+v0.3 正式库入口额外使用 `open_uri` 消息，通过 Windows 固定的 `com.cloudfile.current_agent` Host 启动已配对的 .NET Windows Agent。该入口仅接受 HTTP/HTTPS 同 Origin 的受信网页发来的有界 URI；Host 再核当前用户配对和规范 URI，GUI 仍要求用户确认。当前 dev 中 Windows 的所有操作均使用这一 Host，macOS 保留 Go Host；本地保存后的文件只由用户在 Web 手动上传，不由新 Host 监听或回传。
 
 该扩展只负责会话文件交接，不实现文件预览、编辑或应用检测；这些职责属于本地 Agent
 和用户安装的软件。整体能力状态见[扩展能力矩阵](../cloudfile-docker/docs/feature-matrix.md)。
@@ -64,3 +64,7 @@ macOS/Linux 保留 Go `com.cloudfile.agent2`，该 Host 未安装时才兼容旧
 Windows 1.2.1 的 Host 已接入签名整包更新和独立扩展更新，需要本机配置受信发布源、公钥及已安装扩展目录；未配置时明确返回错误。已受理不代表完成，最终按安装版本复核，并显示持久失败状态。macOS 与旧 Go 的既有更新检查、角标、通知和升级复核保留。独占 Commit/Checkin 未接通，不向网页开放。
 
 回归：`node --test tests/*.cjs`，覆盖 Windows 只调用一个 Host、缺失时不旁路、未来 Go 主控保持 ID、macOS 能力门禁、旧 Go 兼容、未知结果不重发和更新提示。此为模拟回归，Windows/macOS 实机验收另行执行。
+
+## CloudFile v0.8 P0
+
+`1.0.3` 作为 v0.8 配套 Chrome 候选：复用同一个 Windows .NET / macOS Go Native Host 的 `task_summary`、`focus_task`；只有真正在线的本机任务中心才会提供定位功能。扩展不会持有工作副本路径、凭据或上传权限，跨 Scheme/Host/Port 的消息不能互相访问。v0.8 仍需 Windows/macOS 实机插件安装和 Web/Agent/Server 全链验收。
