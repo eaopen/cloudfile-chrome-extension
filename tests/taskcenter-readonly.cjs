@@ -54,7 +54,7 @@ test('task location validates local opaque ID and is never an upload',async()=>{
   assert.equal(good.ok,true);
   assert.equal(b.nativeCalls.filter(c=>c.message.type==='focus_task').length,1);
   assert.equal(b.nativeCalls.find(c=>c.message.type==='focus_task').host,WINDOWS);
-  assert.equal((await b.sendExternal({type:'agent_focus_task',task_id:taskID})),undefined);
+  assert.equal((await b.sendExternal({type:'agent_focus_task',task_id:taskID})).ok,false);
 });
 
 test('no fallback to legacy Host after an unknown Go2 summary result',async()=>{
