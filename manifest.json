@@ -20,14 +20,21 @@
       "128": "icons/icon128.png"
     }
   },
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "externally_connectable": {
     "matches": [
-      "http://10.9.8.162:6111/*",
-      "http://10.12.1.157:8092/*",
-      "http://etech.stcetech.ad01.sec.com/*",
-      "https://etech.stcetech.ad01.sec.com/*"
+      "http://*/*",
+      "https://*/*"
     ]
   },
-  "permissions": ["downloads", "nativeMessaging", "storage", "activeTab", "alarms", "notifications"]
+  "permissions": [
+    "downloads",
+    "nativeMessaging",
+    "storage",
+    "activeTab",
+    "alarms",
+    "notifications"
+  ]
 }

@@ -439,14 +439,55 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 });
 
 async function handleExternal(message, sender) {
+  // Manifest accepts HTTP/HTTPS on any intranet host, so source authorization
+  // must happen HERE for every privileged external operation, not only URI
+  // launch. No file metadata is available to an arbitrary third-party site.
+  let senderOrigin = '';
+  try {
+    const page = new URL(sender?.url);
+    if (page.protocol === 'http:' || page.protocol === 'https:')
+      senderOrigin = page.origin;
+  } catch { /* reject */ }
+  if (!senderOrigin) return { ok: false, error: 'Invalid CloudFile sender origin' };
+  if (message?.type !== 'open_uri') {
+    if (message?.type === 'open_session') {
+      let target = '';
+      try { target = new URL(message.server).origin; } catch { /* reject */ }
+      if (target !== senderOrigin)
+        return { ok: false, error: 'Local session must target the current CloudFile origin' };
+    } else {
+      const current = await chrome.storage.local.get('server');
+      let bound = '';
+      try { bound = new URL(current.server).origin; } catch { /* reject */ }
+      if (bound !== senderOrigin)
+        return { ok: false, error: 'Local file lookup requires a confirmed same-origin session' };
+    }
+  }
   if (message?.type === 'open_uri') {
-    // The v0.3 bridge only accepts a bounded URI from a TLS page. The native
-    // host checks canonical syntax and current-user pairing before GUI launch.
-    let securePage = false;
-    try { securePage = new URL(sender.url).protocol === 'https:'; } catch { /* reject */ }
-    if (!securePage || typeof message.uri !== 'string' || message.uri.length > 2048 ||
+    // Any CloudFile installation can be http or https. Chrome permits sender
+    // access, but this handler requires the URI's exact canonical origin to
+    // equal the originating page, and the installed Host independently checks
+    // current-user pairing before any claim or file access.
+    // Chrome enforces the exact manifest externally_connectable site list.
+    // For an internal HTTP site we ALSO bind the URI to that same sender
+    // origin: an HTTPS site cannot silently downgrade to another HTTP site,
+    // and neither may request a foreign server using this Native Host.
+    let matchingSender = false;
+    try {
+      const page = new URL(sender.url);
+      const uri = new URL(message.uri);
+      const query = uri.searchParams;
+      const instance = query.get('instance');
+      matchingSender = (page.protocol === 'https:' || page.protocol === 'http:') &&
+        uri.protocol === 'cloudfile-open:' && uri.hostname === 'v1' &&
+        uri.pathname === '/open' && [...query.keys()].join(',') === 'instance,session,ticket' &&
+        page.origin === new URL(instance).origin &&
+        instance === new URL(instance).origin &&
+        (instance.startsWith('https://') || instance.startsWith('http://'));
+    } catch { /* reject malformed sender or intent */ }
+    if (!matchingSender || typeof message.uri !== 'string' || message.uri.length > 2048 ||
         !message.uri.startsWith('cloudfile-open://v1/open?')) {
-      return { ok: false, error: '本地打开请求无效或页面未使用 HTTPS' };
+      return { ok: false, error: '本地打开请求与当前已授权 CloudFile 网站不匹配' };
     }
     return routeNative('open_uri', { type: 'open_uri', uri: message.uri });
   }
@@ -482,10 +523,7 @@ async function handleExternal(message, sender) {
   }
   if (message?.type !== 'open_session') return undefined;
   // 记录最近一次会话的 server，供 popup 的「帮助」按钮拼出帮助页地址。
-  if (message.server) {
-    chrome.storage.local.set({ server: message.server }).catch(() => {});
-  }
-  return routeNative('open_session', {
+  const response = await routeNative('open_session', {
     type: 'open_session',
     protocol: message.protocol,
     server: message.server,
@@ -493,6 +531,9 @@ async function handleExternal(message, sender) {
     expires_at: message.expires_at,
     local_action: message.local_action || '',
   });
+  if (response?.ok === true && message.server)
+    await chrome.storage.local.set({ server: message.server });
+  return response;
 }
 
 // 扩展 popup 的查询与操作入口。
