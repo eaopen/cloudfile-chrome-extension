@@ -69,3 +69,12 @@ test('no fallback to legacy Host after an unknown Go2 summary result',async()=>{
   assert.equal(result.ok,false);
   assert.deepEqual(b.nativeCalls.filter(c=>c.message.type==='task_summary').map(c=>c.host),[GO2]);
 });
+
+test('session-scoped IDs are accepted but arbitrary path IDs are rejected', async () => {
+  const id = 'session-' + 'b'.repeat(64);
+  const b = fixture({platform:'win'});
+  const reply = await b.sendInternal({type:'agent_focus_task',task_id:id});
+  assert.equal(reply.ok,true);
+  assert.equal(b.nativeCalls.some(c=>c.message.type==='focus_task' && c.message.task_id===id),true);
+  assert.equal((await b.sendInternal({type:'agent_focus_task',task_id:'session-../../tmp'})).ok,false);
+});

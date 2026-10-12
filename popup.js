@@ -144,7 +144,7 @@ function renderTaskSummary(canFocus) {
         task.local_changed ? '已修改，待确认上传' : '编辑中';
       title.textContent = String(task.file_name || '本地文件') + ' · ' + state;
       row.append(title);
-      if (canFocus && /^[0-9a-f]{64}$/.test(task.task_id || '')) {
+      if (canFocus && /^(?:[0-9a-f]{64}|session-[0-9a-f]{64})$/.test(task.task_id || '')) {
         const focus = document.createElement('button');
         focus.type = 'button';
         focus.textContent = '定位';

@@ -542,7 +542,7 @@ async function handleInternal(message) {
     return {
       ok: true,
       tasks: response.tasks.slice(0, 50).filter(task => task && typeof task === 'object').map(task => ({
-        task_id: typeof task.task_id === 'string' && /^[0-9a-f]{64}$/.test(task.task_id)
+        task_id: typeof task.task_id === 'string' && /^(?:[0-9a-f]{64}|session-[0-9a-f]{64})$/.test(task.task_id)
           ? task.task_id : '',
         file_name: typeof task.file_name === 'string' ? task.file_name.slice(0, 160) : '本地文件',
         mode: task.mode === 'exclusive-edit' ? 'exclusive-edit' : 'local-edit',
@@ -552,7 +552,7 @@ async function handleInternal(message) {
     };
   }
   if (message?.type === 'agent_focus_task') {
-    if (typeof message.task_id !== 'string' || !/^[0-9a-f]{64}$/.test(message.task_id))
+    if (typeof message.task_id !== 'string' || !/^(?:[0-9a-f]{64}|session-[0-9a-f]{64})$/.test(message.task_id))
       return { ok: false, error: '任务编号无效。' };
     const selected = await preferredNative('focus_task');
     if (!selected?.status?.capabilities?.includes('focus_task'))
