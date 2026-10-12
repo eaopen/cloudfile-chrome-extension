@@ -22,8 +22,8 @@ test('Windows sends status, sessions, local open and updates only to its fixed H
     assert.equal(host,WINDOWS);
     return {ok:true,version:'1.2.1',agent_family:'agent1',capabilities:['open_uri','open_session']};
   }});
-  await b.sendExternal({type:'open_session',ticket:'opaque'});
-  await b.sendExternal({type:'open_uri',uri:'cloudfile-open://v1/open?ticket=abc'});
+  await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'opaque'});
+  await b.sendExternal({type:'open_uri',uri:'cloudfile-open://v1/open?instance=https%3A%2F%2Fetech.example&session=11111111-1111-4111-8111-111111111111&ticket=abc'});
   b.store.agent_update={latest_version:'1.2.2'};
   await b.sendInternal({type:'upgrade',kind:'agent'});
   const status=await b.sendInternal({type:'agent_status'});
@@ -38,8 +38,8 @@ test('macOS Go2 takes open_session directly; an unimplemented open_uri has no fa
     if(msg.type==='open_uri')return {ok:false,error:'unsupported operation'};
     return {ok:true};
   }});
-  assert.equal((await b.sendExternal({type:'open_session',ticket:'opaque'})).ok,true);
-  const result=await b.sendExternal({type:'open_uri',uri:'cloudfile-open://v1/open?ticket=a'});
+  assert.equal((await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'opaque'})).ok,true);
+  const result=await b.sendExternal({type:'open_uri',uri:'cloudfile-open://v1/open?instance=https%3A%2F%2Fetech.example&session=11111111-1111-4111-8111-111111111111&ticket=a'});
   assert.equal(result.ok,false);
   assert.deepEqual(actionCalls(b).map(call=>call.host),[NEW]);
 });
@@ -51,7 +51,7 @@ test('old Go 1.x remains usable if Agent2 is absent',async()=>{
     if(host===OLD_GO&&msg.type==='status')return {ok:true,version:'1.0.1'};
     return {ok:true};
   }});
-  assert.equal((await b.sendExternal({type:'open_session',ticket:'opaque'})).ok,true);
+  assert.equal((await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'opaque'})).ok,true);
   assert.deepEqual(actionCalls(b).map(call=>call.host),[OLD_GO]);
 });
 
@@ -63,11 +63,11 @@ test('unknown Agent2 result never falls back to another host and commits remain 
     if(host===NEW)throw Error('lost reply');
     return {ok:true};
   }});
-  const reply=await b.sendExternal({type:'open_session',ticket:'consumable'});
+  const reply=await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'consumable'});
   assert.equal(reply.ok,false);
   assert.match(reply.error,/lost reply/);
   assert.deepEqual(actionCalls(b).map(call=>call.host),[NEW]);
-  assert.equal(await b.sendExternal({type:'checkout_commit',intent:'untrusted'}),undefined);
+  assert.equal((await b.sendExternal({type:'checkout_commit',intent:'untrusted'})).ok,false);
   assert.deepEqual(actionCalls(b).map(call=>call.host),[NEW]);
 });
 
@@ -75,7 +75,7 @@ test('Windows never probes Go Hosts when its fixed Host is missing', async()=>{
   const b=loadBackground({platform:'win',native:async(host)=>{
     assert.equal(host,WINDOWS); throw Error('missing');
   }});
-  assert.equal((await b.sendExternal({type:'open_session',ticket:'one-use'})).ok,false);
+  assert.equal((await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'one-use'})).ok,false);
   assert.equal((await b.sendInternal({type:'agent_status'})).ok,false);
   assert.deepEqual(actionCalls(b),[]);
 });
@@ -86,5 +86,5 @@ test('a future Windows Go controller uses the same Host ID', async()=>{
     return {ok:true,version:'2.1.0',agent_family:'agent2',controller:'go'};
   }});
   assert.equal((await b.sendInternal({type:'agent_status'})).version,'2.1.0');
-  assert.equal((await b.sendExternal({type:'open_session',ticket:'opaque'})).ok,true);
+  assert.equal((await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'opaque'})).ok,true);
 });
