@@ -1,3 +1,5 @@
+[CloudFile product home / 产品总入口](https://github.com/eaopen/cloudfile) · [English](https://github.com/eaopen/cloudfile/blob/main/README.md) · [简体中文](https://github.com/eaopen/cloudfile/blob/main/README.zh-CN.md)
+
 # CloudFile Local Console（Chrome 扩展）
 
 > 用途：说明 `.cloudfile` 会话接收扩展的安装、权限和安全边界
@@ -68,3 +70,9 @@ Windows 1.2.1 的 Host 已接入签名整包更新和独立扩展更新，需要
 ## CloudFile v0.8 P0
 
 `1.0.3` 作为 v0.8 配套 Chrome 候选：复用同一个 Windows .NET / macOS Go Native Host 的 `task_summary`、`focus_task`；只有真正在线的本机任务中心才会提供定位功能。扩展不会持有工作副本路径、凭据或上传权限，跨 Scheme/Host/Port 的消息不能互相访问。v0.8 仍需 Windows/macOS 实机插件安装和 Web/Agent/Server 全链验收。
+
+## License / 许可证
+
+CloudFile-owned code is licensed under [Apache 2.0](LICENSE). Third-party components retain their own licenses. See [NOTICE](NOTICE).
+
+CloudFile 自有代码采用 [Apache 2.0](LICENSE)，第三方组件保留各自许可证，见 [NOTICE](NOTICE)。
