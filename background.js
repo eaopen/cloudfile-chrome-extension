@@ -33,6 +33,10 @@ const LEGACY_GO_OPERATIONS = new Set([
   'open_session', 'query_local_file', 'query_local_folder', 'open_workspace',
   'check_update', 'update', 'update_extension',
 ]);
+// First-use device pairing from an already authenticated page. The page keeps
+// its own CloudFile session and CSRF token; these messages only relay the
+// Agent's enrollment/signature steps, always bound to the real sender origin.
+const PAIRING_MESSAGES = new Set(['pair_prepare', 'pair_sign', 'pair_confirm']);
 async function readNativeStatus(host) {
   try {
     const status = await chrome.runtime.sendNativeMessage(host, { type: 'status' });
@@ -438,6 +442,36 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   return true;
 });
 
+// The page already holds the CloudFile session and CSRF token; these helpers
+// only relay the Agent's enrollment/signature steps. The deployment path is a
+// location inside the sender's own origin, never a second origin.
+function validServicePath(path) {
+  return typeof path === 'string' && path.length <= 100 &&
+    (path === '' || /^(\/[A-Za-z0-9_-]+)+$/.test(path));
+}
+
+async function pairNative(message, senderOrigin) {
+  if (message.type === 'pair_prepare') {
+    if (message.service_path !== undefined && !validServicePath(message.service_path))
+      return { ok: false, error: 'Invalid CloudFile service path' };
+    // The Agent independently proves the instance before trusting it; the
+    // browser never smuggles a foreign origin through this channel.
+    return routeNative('pair_prepare', {
+      type: 'pair_prepare', server: senderOrigin, service_path: message.service_path || '',
+    });
+  }
+  const response = message.response;
+  if (!response || typeof response !== 'object' || Array.isArray(response))
+    return { ok: false, error: 'Invalid pairing response' };
+  let encoded = '';
+  try { encoded = JSON.stringify(response); } catch { /* reject */ }
+  if (!encoded || encoded.length > 65536)
+    return { ok: false, error: 'Pairing response is too large' };
+  return routeNative(message.type, {
+    type: message.type, server: senderOrigin, response,
+  });
+}
+
 async function handleExternal(message, sender) {
   // Manifest accepts HTTP/HTTPS on any intranet host, so source authorization
   // must happen HERE for every privileged external operation, not only URI
@@ -450,7 +484,9 @@ async function handleExternal(message, sender) {
   } catch { /* reject */ }
   if (!senderOrigin) return { ok: false, error: 'Invalid CloudFile sender origin' };
   if (message?.type !== 'open_uri') {
-    if (message?.type === 'open_session') {
+    if (message?.type === 'open_session' || PAIRING_MESSAGES.has(message?.type)) {
+      // First-use pairing and ordinary sessions are bound to the exact origin
+      // the page claims, never to a previously stored server.
       let target = '';
       try { target = new URL(message.server).origin; } catch { /* reject */ }
       if (target !== senderOrigin)
@@ -491,6 +527,8 @@ async function handleExternal(message, sender) {
     }
     return routeNative('open_uri', { type: 'open_uri', uri: message.uri });
   }
+
+  if (PAIRING_MESSAGES.has(message?.type)) return pairNative(message, senderOrigin);
 
   if (message?.type === 'query_local_file') {
     // 网页在发起本地编辑前查询本地缓存状态（是否存在 / hash / 大小 / 时间），
