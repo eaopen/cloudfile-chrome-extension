@@ -68,6 +68,11 @@ async function routeNative(type, payload) {
   if (!selected) return { ok: false, error: '本机 Agent 未就绪，请检查当前平台的安装。' };
   if (type === 'status')
     return { ...selected.status, selected_host: selected.host, selected_family: selected.family };
+  // V2 file grants are understood only by Rust Agent2. Never pass a new
+  // one-time edit credential to the older Windows .NET or macOS Go Host.
+  if (type === 'open_uri' && payload.uri.startsWith('cloudfile-open://v2/open?') &&
+      !supportsAgent2(selected.status, type))
+    return { ok: false, error: 'V2 编辑要求 Rust Agent2；不会回退至旧客户端。' };
   if (selected.host === AGENT2_HOST && !supportsAgent2(selected.status, type) &&
       !['update', 'update_extension'].includes(type))
     return { ok: false, error: '当前平台 Agent 尚未支持此操作。' };
@@ -514,15 +519,21 @@ async function handleExternal(message, sender) {
       const uri = new URL(message.uri);
       const query = uri.searchParams;
       const instance = query.get('instance');
+      const v1 = uri.hostname === 'v1' && message.uri.startsWith('cloudfile-open://v1/open?') &&
+        message.uri.length <= 2048;
+      const v2 = uri.hostname === 'v2' && message.uri.startsWith('cloudfile-open://v2/open?') &&
+        message.uri.length <= 16384 &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.get('session') || '') &&
+        /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(query.get('ticket') || '');
       matchingSender = (page.protocol === 'https:' || page.protocol === 'http:') &&
-        uri.protocol === 'cloudfile-open:' && uri.hostname === 'v1' &&
-        uri.pathname === '/open' && [...query.keys()].join(',') === 'instance,session,ticket' &&
+        uri.protocol === 'cloudfile-open:' && (v1 || v2) &&
+        uri.pathname === '/open' && !uri.hash &&
+        [...query.keys()].join(',') === 'instance,session,ticket' &&
         page.origin === new URL(instance).origin &&
         instance === new URL(instance).origin &&
         (instance.startsWith('https://') || instance.startsWith('http://'));
     } catch { /* reject malformed sender or intent */ }
-    if (!matchingSender || typeof message.uri !== 'string' || message.uri.length > 2048 ||
-        !message.uri.startsWith('cloudfile-open://v1/open?')) {
+    if (!matchingSender || typeof message.uri !== 'string') {
       return { ok: false, error: '本地打开请求与当前已授权 CloudFile 网站不匹配' };
     }
     return routeNative('open_uri', { type: 'open_uri', uri: message.uri });

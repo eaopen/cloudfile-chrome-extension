@@ -135,3 +135,42 @@ test('failed legacy open_session never authorizes future local queries', async (
   assert.equal(result.ok, false);
   assert.equal(background.store.server, undefined);
 });
+
+test('V2 scoped URI reaches Rust Agent2 on Windows and macOS, never legacy Host', async () => {
+  const origin = 'https://etech.example';
+  const uri = 'cloudfile-open://v2/open?instance=' + encodeURIComponent(origin) +
+    '&session=11111111-1111-4111-8111-111111111111&ticket=aaa.bbb.ccc';
+  for (const platform of ['win', 'mac']) {
+    const b = loadBackground({ platform, native: async (host, message) => {
+      if (message.type === 'status') {
+        return host === (platform === 'win' ? 'com.cloudfile.current_agent' : 'com.cloudfile.agent2')
+          ? {ok:true,version:'2.2.0',agent_family:'agent2',capabilities:['open_uri']}
+          : {ok:false};
+      }
+      return {ok:true};
+    }});
+    const reply = await b.sendExternal({ type:'open_uri', uri }, { url: origin + '/cfile/' });
+    assert.equal(reply.ok, true);
+    assert.equal(b.nativeCalls.filter(c => c.message.type === 'open_uri').length, 1);
+  }
+  const legacy = loadBackground({platform:'win', native: async () =>
+    ({ok:true,version:'1.2.1',agent_family:'agent1',capabilities:['open_uri']})});
+  assert.equal((await legacy.sendExternal({type:'open_uri',uri},{url:origin+'/cfile/'})).ok,false);
+  assert.equal(legacy.nativeCalls.filter(c => c.message.type === 'open_uri').length,0);
+});
+
+test('V2 URI rejects other origin, duplicate arguments, malformed ticket and excess length', async () => {
+  const b = loadBackground();
+  const base = 'cloudfile-open://v2/open?instance=https%3A%2F%2Fetech.example&session=11111111-1111-4111-8111-111111111111&ticket=aaa.bbb.ccc';
+  for (const uri of [
+    base.replace('https%3A%2F%2Fetech.example','http%3A%2F%2Fetech.example'),
+    base + '&ticket=bad',
+    base.replace('aaa.bbb.ccc','bad'),
+    base + '#' + 'x',
+    base + 'x'.repeat(17000),
+  ]) {
+    const result = await b.sendExternal({type:'open_uri',uri},{url:'https://etech.example/cfile/'});
+    assert.equal(result.ok,false,uri.slice(0,100));
+  }
+  assert.equal(b.nativeCalls.filter(c=>c.message.type==='open_uri').length,0);
+});
