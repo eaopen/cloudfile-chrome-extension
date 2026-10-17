@@ -325,6 +325,17 @@ async function verifyUpgrade() {
   const result = await probeAgent().catch(() => null);
   if (result) {
     await applyProbe(result);
+    // Agent2.3 may have fully verified and staged a release while a local
+    // edit or the resident desktop is still active. This is intentionally
+    // deferred, not a failed update and not something to retry blindly.
+    if (kind === 'agent' && result.last_update_state === 'prepared' &&
+        result.last_update_kind === 'agent') {
+      await chrome.storage.local.remove('update_verify');
+      await chrome.storage.local.set({
+        update_prepared: { target, checked_at: Date.now() },
+      });
+      return;
+    }
     if (result.last_update_state === 'failed' && result.last_update_kind === kind) {
       await chrome.storage.local.remove('update_verify');
       await reportStalledUpgrade(kind, target);

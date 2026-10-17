@@ -91,3 +91,18 @@ test('macOS updates use the selected Go2 Host and never Windows registration', a
   assert.equal((await b.sendInternal({type:'upgrade',kind:'agent'})).ok,true);
   assert.equal(b.nativeCalls.find(call=>call.message.type==='update').host,NEXT);
 });
+
+
+test('Agent2.3 staged-but-deferred updates are not falsely reported as failed', async () => {
+  const b = loadBackground({ platform: 'win', native: async(host) => {
+    assert.equal(host, CURRENT);
+    return {ok: true, version: '2.3.0-dev.1', agent_family:'agent2',
+      last_update_kind:'agent', last_update_state:'prepared'};
+  }});
+  b.store.update_verify = {kind:'agent',target:'2.3.0-dev.2',attempts:2};
+  b.triggerAlarm('cloudfile-update-verify');
+  await tick(); await tick();
+  assert.equal(b.store.update_verify, undefined);
+  assert.equal(b.store.update_prepared?.target, '2.3.0-dev.2');
+  assert.equal(b.store.update_notified?.agent, undefined);
+});
