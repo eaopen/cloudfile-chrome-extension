@@ -80,3 +80,29 @@ Windows 1.2.1 的 Host 已接入签名整包更新和独立扩展更新，需要
 CloudFile-owned code is licensed under [Apache 2.0](../LICENSE). Third-party components retain their own licenses. See [NOTICE](../NOTICE).
 
 CloudFile 自有代码采用 [Apache 2.0](../LICENSE)，第三方组件保留各自许可证，见 [NOTICE](../NOTICE)。
+
+## CloudFile V2 three-mode handoff (2026-10-19)
+
+Browser actions `local-view`, `optimistic-edit`, and `exclusive-edit` use the **same**
+`cloudfile-open://v2/open?instance=...&session=...&ticket=...` URI envelope.
+The **server-signed ticket** owns the mode; the extension must not decode the
+unverified JWT payload or infer write authority from the user-facing button.
+
+- Same sender-origin validation applies to all three modes, including HTTP
+  intranet sites. No cross-origin or cross-Host retry of a consumed URI.
+- Only a compatible **Rust Agent2** Host is eligible. Windows still uses the
+  explicitly selected `com.cloudfile.current_agent` controller; an installed
+  dev Host is not silently promoted over the user's old/default client.
+- After a successful native `open_uri` reply, remember only the confirmed
+  **site origin** for same-origin task queries. Failed handoffs do not authorize
+  queries. Never store the ticket, message payload or local working path.
+- No new `mode` field is accepted in browser-to-extension Native Messaging
+  handoff. The native Fileserver distinguishes read-only from write permissions.
+- A green mock test only verifies extension dispatch and fail-closed behavior.
+  Installed Windows/macOS Native Host registration and end-to-end CloudFile V2
+  account/view/edit/checkout still require actual device and DEV validation.
+
+Related changes:
+[Hub view ticket](https://github.com/eaopen/cloudfile-hub/pull/27) ·
+[Fileserver authorization](https://github.com/eaopen/cloudfile-server/pull/11) ·
+[Agent2 session handler](https://github.com/eaopen/cloudfile-local-agent2/pull/6).
