@@ -4,7 +4,11 @@
 
 [产品中心](https://github.com/eaopen/cloudfile) · [Local Agent](https://github.com/eaopen/cloudfile-local-agent)
 
-Manifest V3 浏览器扩展，将受支持的 CloudFile 会话交给本机 Native Host，并显示本地任务与更新状态。扩展不负责文件授权、桌面编辑或服务端版本发布。
+Manifest V3 浏览器扩展（当前 1.0.4），将受支持的 CloudFile 会话交给本机 Native Host，并显示本地任务与更新状态。扩展不负责文件授权、桌面编辑或服务端版本发布。
+
+V2 本地查看、本地编辑和独占编辑共用受信 `cloudfile-open://v2/open` 会话信封，
+由 CloudFile Server 签名票据区分只读和写入权限。插件不读取票据内容、
+不缓存票据，并且仅在 Rust Agent2 确认成功后记录站点 Origin。
 
 ## 安装与兼容
 
