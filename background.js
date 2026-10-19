@@ -72,7 +72,7 @@ async function routeNative(type, payload) {
   // one-time edit credential to the older Windows .NET or macOS Go Host.
   if (type === 'open_uri' && payload.uri.startsWith('cloudfile-open://v2/open?') &&
       !supportsAgent2(selected.status, type))
-    return { ok: false, error: 'V2 编辑要求 Rust Agent2；不会回退至旧客户端。' };
+    return { ok: false, error: 'V2 本地查看/编辑要求 Rust Agent2；不会回退至旧客户端。' };
   if (selected.host === AGENT2_HOST && !supportsAgent2(selected.status, type) &&
       !['update', 'update_extension'].includes(type))
     return { ok: false, error: '当前平台 Agent 尚未支持此操作。' };
@@ -547,7 +547,14 @@ async function handleExternal(message, sender) {
     if (!matchingSender || typeof message.uri !== 'string') {
       return { ok: false, error: '本地打开请求与当前已授权 CloudFile 网站不匹配' };
     }
-    return routeNative('open_uri', { type: 'open_uri', uri: message.uri });
+    const result = await routeNative('open_uri', { type: 'open_uri', uri: message.uri });
+    // Native Agent2 must first confirm a real, scoped session. Only after
+    // success may the same-origin Web page query the resulting local task.
+    // This stores a site origin, never the one-time ticket or file path.
+    if (result?.ok === true) {
+      await chrome.storage.local.set({ server: senderOrigin });
+    }
+    return result;
   }
 
   if (PAIRING_MESSAGES.has(message?.type)) return pairNative(message, senderOrigin);

@@ -174,3 +174,40 @@ test('V2 URI rejects other origin, duplicate arguments, malformed ticket and exc
   }
   assert.equal(b.nativeCalls.filter(c=>c.message.type==='open_uri').length,0);
 });
+
+test('V2 local-view and edit share one safe native route and bind origin only on confirmed success', async () => {
+  const origin = 'https://etech.example';
+  const base = 'cloudfile-open://v2/open?instance=' + encodeURIComponent(origin) +
+    '&session=11111111-1111-4111-8111-111111111111&ticket=';
+  const b = loadBackground({ platform:'win', native: async (_host, msg) => {
+    if (msg.type === 'status') return { ok:true, version:'2.2.0', agent_family:'agent2', capabilities:['open_uri','query_local_file'] };
+    if (msg.type === 'open_uri') return { ok: msg.uri.endsWith('read.only.ticket') };
+    if (msg.type === 'query_local_file') return { ok:true, local_exists:true };
+    return { ok:false };
+  }});
+  const view = await b.sendExternal({type:'open_uri',uri:base+'read.only.ticket'},{url:origin+'/cfile/file'});
+  assert.equal(view.ok,true);
+  assert.equal(b.store.server,origin,'store origin only, never bearer ticket');
+  assert.ok(!JSON.stringify(b.store).includes('read.only.ticket'));
+  const afterView = await b.sendExternal({type:'query_local_file',repo_id:'test',path:'/report.pdf',mode:'local-view'},{url:origin+'/cfile/file'});
+  assert.equal(afterView.ok,true);
+  const edit = await b.sendExternal({type:'open_uri',uri:base+'write.edit.ticket'},{url:origin+'/cfile/file'});
+  assert.equal(edit.ok,false);
+  const other = await b.sendExternal({type:'query_local_file',repo_id:'test',path:'/report.pdf',mode:'local-view'},{url:'https://evil.example/cfile/file'});
+  assert.equal(other.ok,false);
+  assert.equal(b.nativeCalls.filter(x=>x.message.type==='open_uri').length,2,
+    'never cross-host retry a one-time ticket');
+});
+
+test('failed V2 handoff never creates new same-origin task-query authorization', async () => {
+  const origin = 'https://etech.example';
+  const b = loadBackground({platform:'win',native:async (_host, msg) =>
+    msg.type === 'status'
+      ? {ok:true,version:'2.2.0',agent_family:'agent2',capabilities:['open_uri']}
+      : {ok:false,error:'not yet authorized'}});
+  const uri='cloudfile-open://v2/open?instance='+encodeURIComponent(origin)+
+    '&session=11111111-1111-4111-8111-111111111111&ticket=read.only.ticket';
+  assert.equal((await b.sendExternal({type:'open_uri',uri},{url:origin+'/cfile/file'})).ok,false);
+  assert.equal(b.store.server,undefined);
+  assert.equal((await b.sendExternal({type:'query_local_file',repo_id:'test',path:'/report.pdf'},{url:origin+'/cfile/file'})).ok,false);
+});
