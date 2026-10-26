@@ -12,14 +12,16 @@ function loadBackground(options = {}) {
       onMessage: { addListener(fn) { internal = fn; } },
       onInstalled: { addListener() {} },
       onStartup: { addListener() {} },
-      getPlatformInfo: async () => ({ os: options.platform || 'mac' }),
+      getPlatformInfo: Object.hasOwn(options, 'getPlatformInfo')
+        ? options.getPlatformInfo : async () => ({ os: options.platform || 'mac' }),
       getManifest: () => ({ version: '1.0.1' }),
       sendNativeMessage: async (host, message) => {
         nativeCalls.push({ host, message });
         if (typeof options.native === 'function') return options.native(host, message);
-        if (host === 'com.cloudfile.agent2') throw new Error('Agent2 host not installed');
         if (host === 'com.cloudfile.current_agent' && options.currentHostMissing) throw new Error('Windows host not installed');
-        if (message.type === 'status') return { ok: true, version: '1.0.1' };
+        if (message.type === 'status') return host === 'com.cloudfile.current_agent'
+          ? { ok: true, version: '1.0.1' }
+          : { ok: true, version: '2.0.2', agent_family: 'agent2', capabilities: ['open_uri', 'open_session', 'query_local_file', 'query_local_folder', 'open_workspace', 'check_update'] };
         return { ok: true };
       },
       reload() {},

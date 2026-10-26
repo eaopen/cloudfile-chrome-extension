@@ -21,8 +21,17 @@ const updateStatus = document.querySelector('#update-status');
 
 let workspaceRoot = '';
 let agentUpdateCommand = '';
+let windowsPlatform = true;
+let extensionUpgradeAllowed = true;
+let extensionUpgradeReason = '';
 
 const HELP_URL = '/cloudfile-updates/help.html';
+
+function installedAgentVersion(result) {
+  const family = result?.selected_family || result?.agent_family;
+  return family === 'agent2' && typeof result.build_version === 'string' && result.build_version
+    ? result.build_version : result?.version || '';
+}
 
 // 升级区块的标题与说明：Agent 与扩展可能同时有待升级版本，各自往里追加，
 // 最后一次性渲染，避免后写的把先写的覆盖掉。
@@ -87,13 +96,16 @@ helpButton.addEventListener('click', async () => {
 
 // 查询 Agent 状态，渲染就绪状态、自动检测应用、本地目录与两侧的升级提示。
 chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
+  windowsPlatform = result?.windows_platform !== false;
+  extensionUpgradeAllowed = result?.extension_upgrade_allowed !== false;
+  extensionUpgradeReason = result?.extension_upgrade_reason || '';
   if (chrome.runtime.lastError || !result?.ok) {
     status.textContent = `Agent 未就绪：${result?.error ?? '请执行绿色包中的注册脚本。'}`;
     status.className = 'status error';
   } else {
     const agentName = result.selected_family === "agent2" ? "Agent2" :
-    result.selected_family === "agent1" ? "Windows Agent1" : "Go Agent 1.x";
-  status.textContent = `${agentName} 已就绪 · v${result.version}`;
+    result.selected_family === "agent1" ? "Windows Agent1" : "Agent";
+    status.textContent = `${agentName} 已就绪 · v${installedAgentVersion(result)}`;
     status.className = 'status ready';
     // 固定展示支持的本地文件类型，不随本机实际安装的软件版本变化。
     applications.hidden = false;
@@ -169,7 +181,7 @@ function renderTaskSummary(canFocus) {
 
 function renderAgentUpdate(result) {
   if (!result.update_available) return;
-  updateHeadlines.push(`本地 Agent 可升级：v${result.version} → v${result.latest_version}`);
+  updateHeadlines.push(`本地 Agent 可升级：v${installedAgentVersion(result)} → v${result.latest_version}`);
   if (result.latest_notes) updateHints.push(result.latest_notes);
   // 命令给出 Agent 的完整路径，用户不必猜 exe 装在哪。
   if (result.executable_path) {
@@ -179,7 +191,7 @@ function renderAgentUpdate(result) {
     updateCopy.hidden = false;
   }
   updateApply.hidden = false;
-  updateHints.push('点「立即升级 Agent」自动下载安装，完成后会自动复核版本号；也可点「复制升级命令」在 PowerShell 中手动执行。');
+  updateHints.push(`点「立即升级 Agent」自动下载安装，完成后会自动复核版本号；也可点「复制升级命令」在${windowsPlatform ? ' PowerShell ' : '终端'}中手动执行。`);
   markUpdateSeen('agent', result.latest_version);
 }
 
@@ -188,9 +200,13 @@ async function renderExtensionUpdate() {
   if (!extension_update?.has_update) return;
   updateHeadlines.push(`扩展可升级：v${extension_update.current_version} → v${extension_update.latest_version}`);
   if (extension_update.notes) updateHints.push(extension_update.notes);
-  updateExtensionApply.hidden = false;
-  updateHints.push('点「立即升级扩展」自动下载并替换扩展文件，随后扩展会自动重新加载生效（若 Chrome 提示新增权限，按提示确认即可）。');
-  updateHints.push('也可以点下方「安装帮助」，按说明重跑注册脚本，再在 chrome://extensions 点「重新加载」。');
+  updateExtensionApply.hidden = !extensionUpgradeAllowed;
+  if (extensionUpgradeAllowed)
+    updateHints.push('点「立即升级扩展」自动下载并替换扩展文件，随后扩展会自动重新加载生效（若 Chrome 提示新增权限，按提示确认即可）。');
+  else updateHints.push(extensionUpgradeReason);
+  updateHints.push(windowsPlatform
+    ? '也可以点下方「安装帮助」，按说明重跑注册脚本，再在 chrome://extensions 点「重新加载」。'
+    : '可点下方「安装帮助」，使用对应系统的扩展安装目录，再在 chrome://extensions 点「重新加载」。');
   markUpdateSeen('extension', extension_update.latest_version);
 }
 
@@ -238,7 +254,7 @@ updateCopy.addEventListener('click', async () => {
   if (!agentUpdateCommand) return;
   try {
     await navigator.clipboard.writeText(agentUpdateCommand);
-    setUpdateStatus('升级命令已复制，请在 PowerShell 中粘贴运行。');
+    setUpdateStatus(`升级命令已复制，请在${windowsPlatform ? ' PowerShell ' : '终端'}中粘贴运行。`);
   } catch {
     setUpdateStatus('复制失败，请手动选中命令内容并复制。');
   }

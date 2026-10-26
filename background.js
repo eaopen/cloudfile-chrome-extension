@@ -1,5 +1,4 @@
 const AGENT2_HOST = 'com.cloudfile.agent2';
-const HOST = 'com.cloudfile.local_agent'; // Legacy Go 1.x
 const CURRENT_HOST = 'com.cloudfile.current_agent'; // Windows Agent1/.NET
 
 // 扩展自身更新清单的静态地址（与 Agent 的 update.json 同目录约定）。
@@ -21,18 +20,31 @@ const NOTIFICATION_ID = 'cloudfile-update';
 const BADGE_COLOR = '#e8710a';
 const HELP_PATH = '/cloudfile-updates/help.html';
 
-// Windows always uses its fixed controller Host, including future Go controllers.
-// macOS/Linux discover Go2 then legacy Go1 before dispatching any action.
+// Windows keeps its fixed controller Host for the existing .NET and Rust clients.
+// macOS/Linux share the Rust Host. The unpublished Go Agent is retired.
 async function isWindows() {
-  return (await chrome.runtime.getPlatformInfo()).os === 'win';
+  // 系统信息缺失、查询失败或返回未知值时，沿用 Windows 固定 Host，
+  // 避免现有 Windows 客户端因识别失败被误路由到其他平台。
+  try {
+    const platform = await chrome.runtime.getPlatformInfo();
+    return !['mac', 'linux', 'android', 'cros', 'openbsd', 'fuchsia'].includes(platform?.os);
+  } catch {
+    return true;
+  }
 }
 async function sendNative(message) {
   return routeNative(message.type, message);
 }
-const LEGACY_GO_OPERATIONS = new Set([
-  'open_session', 'query_local_file', 'query_local_folder', 'open_workspace',
-  'check_update', 'update', 'update_extension',
-]);
+function extensionUpgradePolicy(status, windows) {
+  // Windows 沿用既有安装链路；非 Windows 开发 Host 不能被通用包覆盖，
+  // 未配置更新源时也不能把“发现新版”误报成“可以一键安装”。
+  if (windows) return { allowed: true, reason: '' };
+  if ((status?.selected_host || AGENT2_HOST).endsWith('.dev'))
+    return { allowed: false, reason: '当前使用开发版 Host，请使用对应系统的开发扩展包更新，再在 chrome://extensions 重新加载。' };
+  if (status?.update_source_set === false)
+    return { allowed: false, reason: '当前系统的 Agent 未配置更新源，请先完成该系统的安装配置，或手动加载对应扩展包。' };
+  return { allowed: true, reason: '' };
+}
 // First-use device pairing from an already authenticated page. The page keeps
 // its own CloudFile session and CSRF token; these messages only relay the
 // Agent's enrollment/signature steps, always bound to the real sender origin.
@@ -54,13 +66,9 @@ async function preferredNative(type) {
     return status ? { host: CURRENT_HOST, status, family: status.agent_family || 'agent1' } : null;
   }
   const newer = await readNativeStatus(AGENT2_HOST);
-  // An installed Go2 owns all operations; unsupported ones fail on this Host.
+  // Rust owns all operations; unsupported ones fail without probing retired Go Hosts.
   if (newer?.agent_family === 'agent2' && /^2\.[0-9]+\.[0-9]+$/.test(newer.version || ''))
     return { host: AGENT2_HOST, status: newer, family: 'agent2' };
-  if (type === 'status' || LEGACY_GO_OPERATIONS.has(type)) {
-    const olderGo = await readNativeStatus(HOST);
-    if (olderGo) return { host: HOST, status: olderGo, family: 'legacy-go' };
-  }
   return null;
 }
 async function routeNative(type, payload) {
@@ -157,13 +165,21 @@ async function refreshUpdates() {
   await syncUpdateIndicators();
 }
 
+// Rust reports its protocol version separately from the installed build.
+// Existing Windows clients continue using their original version field.
+function installedAgentVersion(result) {
+  return result?.agent_family === 'agent2' && typeof result.build_version === 'string' && result.build_version
+    ? result.build_version : result?.version || '';
+}
+
 async function applyProbe(result) {
   const { agent_update: previous } = await chrome.storage.local.get('agent_update');
   // Local status does not fetch the signed release feed. Keep the most recent
   // successful check while updating the installed version after activation.
+  const current = installedAgentVersion(result) || previous?.current_version || '';
   const update = result.latest_version ? toAgentUpdate(result) : {
-    ...(previous || {}), current_version: result.version || previous?.current_version || '',
-    has_update: versionNewer(previous?.latest_version, result.version || previous?.current_version || ''),
+    ...(previous || {}), current_version: current,
+    has_update: versionNewer(previous?.latest_version, current),
   };
   await chrome.storage.local.set({ agent_update: update });
   const extension = toExtensionUpdateFromAgent(result);
@@ -175,7 +191,7 @@ async function applyProbe(result) {
 function toAgentUpdate(result) {
   return {
     checked_at: Date.now(),
-    current_version: result.version || '',
+    current_version: installedAgentVersion(result),
     latest_version: result.latest_version || '',
     notes: result.latest_notes || '',
     has_update: !!result.update_available,
@@ -341,7 +357,7 @@ async function verifyUpgrade() {
       await reportStalledUpgrade(kind, target);
       return;
     }
-    if (kind === 'agent' && compareVersions(result.version || '', target) >= 0) {
+    if (kind === 'agent' && compareVersions(installedAgentVersion(result), target) >= 0) {
       await chrome.storage.local.remove('update_verify');
       await refreshUpdates();
       return;
@@ -623,7 +639,10 @@ async function handleInternal(message) {
     // 只刷角标、不弹通知：用户正看着 popup，popup 紧接着就会把该版本标记为已读，
     // 这时候再弹系统通知是打扰。
     await refreshBadge();
-    return result;
+    const windows = await isWindows();
+    const policy = extensionUpgradePolicy(result, windows);
+    return { ...result, windows_platform: windows,
+      extension_upgrade_allowed: policy.allowed, extension_upgrade_reason: policy.reason };
   }
   if (message?.type === 'updates_seen') {
     // popup 已把该版本展示给用户：清角标、并抑制同一版本的系统通知。
@@ -679,6 +698,13 @@ async function startUpgrade(kind) {
       const { extension_update } = await chrome.storage.local.get('extension_update');
       if (!extension_update?.latest_version) {
         return { ok: false, error: '暂时拿不到扩展的更新信息，请稍后再试或查看当前平台的安装帮助。' };
+      }
+      const windows = await isWindows();
+      if (!windows) {
+        const status = await probeAgentStatus();
+        if (!status?.ok) return { ok: false, error: '当前系统的 Agent 未就绪，请先完成安装。' };
+        const policy = extensionUpgradePolicy(status, windows);
+        if (!policy.allowed) return { ok: false, error: policy.reason };
       }
       const accepted = await sendNative({ type: 'update_extension' });
       if (accepted?.ok !== true) return { ok: false, error: accepted?.error || '扩展升级未获得 Agent 确认。' };
