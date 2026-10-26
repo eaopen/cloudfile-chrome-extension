@@ -4,7 +4,6 @@ const { loadBackground } = require('./chrome-mock.cjs');
 
 const NEW = 'com.cloudfile.agent2';
 const WINDOWS = 'com.cloudfile.current_agent';
-const OLD_GO = 'com.cloudfile.local_agent';
 const actionCalls = b => b.nativeCalls.filter(item =>
   item.message.type !== 'status' && item.message.type !== 'check_update');
 function fixture(capabilities = ['open_session', 'open_workspace','query_local_file','query_local_folder']) {
@@ -31,7 +30,7 @@ test('Windows sends status, sessions, local open and updates only to its fixed H
   assert.deepEqual(actionCalls(b).map(call=>call.host),[WINDOWS,WINDOWS,WINDOWS]);
 });
 
-test('macOS Go2 takes open_session directly; an unimplemented open_uri has no fallback', async () => {
+test('macOS Rust Agent2 takes open_session directly; an unimplemented open_uri has no fallback', async () => {
   const b=loadBackground({native:async(host,msg)=>{
     if(host===NEW&&msg.type==='status')return {ok:true,version:'2.0.1',agent_family:'agent2',platform:'darwin',capabilities:['open_session']};
     if(msg.type==='status')throw Error('Host missing');
@@ -44,15 +43,15 @@ test('macOS Go2 takes open_session directly; an unimplemented open_uri has no fa
   assert.deepEqual(actionCalls(b).map(call=>call.host),[NEW]);
 });
 
-test('old Go 1.x remains usable if Agent2 is absent',async()=>{
-  const b=loadBackground({native:async(host,msg)=>{
-    if(host===NEW)throw Error('Agent2 absent');
-    if(host===WINDOWS)throw Error('Windows .NET absent');
-    if(host===OLD_GO&&msg.type==='status')return {ok:true,version:'1.0.1'};
-    return {ok:true};
-  }});
-  assert.equal((await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'opaque'})).ok,true);
-  assert.deepEqual(actionCalls(b).map(call=>call.host),[OLD_GO]);
+test('macOS and Linux never probe retired Go Hosts when Rust is absent', async () => {
+  for (const platform of ['mac', 'linux']) {
+    const b = loadBackground({ platform, native: async (host) => {
+      assert.equal(host, NEW);
+      throw Error('Rust Agent absent');
+    }});
+    assert.equal((await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'opaque'})).ok, false);
+    assert.deepEqual(actionCalls(b), []);
+  }
 });
 
 test('unknown Agent2 result never falls back to another host and commits remain closed',async()=>{
@@ -80,11 +79,41 @@ test('Windows never probes Go Hosts when its fixed Host is missing', async()=>{
   assert.deepEqual(actionCalls(b),[]);
 });
 
-test('a future Windows Go controller uses the same Host ID', async()=>{
+test('a Windows Rust controller uses the same Host ID', async()=>{
   const b=loadBackground({platform:'win',native:async(host)=>{
     assert.equal(host,WINDOWS);
-    return {ok:true,version:'2.1.0',agent_family:'agent2',controller:'go'};
+    return {ok:true,version:'2.1.0',agent_family:'agent2',controller:'rust'};
   }});
   assert.equal((await b.sendInternal({type:'agent_status'})).version,'2.1.0');
   assert.equal((await b.sendExternal({type:'open_session',server:'https://etech.example/app',ticket:'opaque'})).ok,true);
+});
+
+test('unavailable or unknown OS detection retains the Windows controller', async () => {
+  for (const getPlatformInfo of [
+    undefined,
+    async () => { throw Error('platform query failed'); },
+    async () => undefined,
+    async () => null,
+    async () => ({}),
+    async () => ({ os: '' }),
+    async () => ({ os: 'unknown' }),
+  ]) {
+    const b = loadBackground({ getPlatformInfo, native: async (host) => {
+      assert.equal(host, WINDOWS);
+      return { ok: true, version: '1.2.1', agent_family: 'agent1' };
+    }});
+    assert.equal((await b.sendInternal({ type: 'agent_status' })).selected_host, WINDOWS);
+    assert.equal((await b.sendExternal({ type: 'open_session', server: 'https://etech.example/app', ticket: 'opaque' })).ok, true);
+    assert.deepEqual(actionCalls(b).map(call => call.host), [WINDOWS]);
+  }
+});
+
+test('recognized non-Windows platforms retain their existing Host discovery', async () => {
+  for (const platform of ['mac', 'linux', 'android', 'cros', 'openbsd', 'fuchsia']) {
+    const b = loadBackground({ platform, native: async (host) => {
+      assert.equal(host, NEW);
+      return { ok: true, version: '2.2.0', agent_family: 'agent2', capabilities: ['status'] };
+    }});
+    assert.equal((await b.sendInternal({ type: 'agent_status' })).selected_host, NEW);
+  }
 });

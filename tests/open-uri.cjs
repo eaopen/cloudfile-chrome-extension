@@ -45,7 +45,7 @@ test('cross-origin, wrong-scheme and unbounded open URIs never reach the native 
   assert.equal(background.nativeCalls.length, 0);
 });
 
-test('a page-initiated local open forwards the session and records the server', async () => {  const background = loadBackground({ native: async () => ({ ok: true }) });
+test('a page-initiated local open forwards the session and records the server', async () => {  const background = loadBackground({ platform: 'win', native: async () => ({ ok: true }) });
   const reply = await background.sendExternal({
     type: 'open_session',
     protocol: 'cloudfile-open',
@@ -57,14 +57,14 @@ test('a page-initiated local open forwards the session and records the server', 
   await settle();
   assert.equal(reply.ok, true);
   const call = background.nativeCalls.find((item) => item.message.type === 'open_session');
-  assert.equal(call.host, 'com.cloudfile.local_agent');
+  assert.equal(call.host, 'com.cloudfile.current_agent');
   assert.equal(call.message.local_action, 'edit');
   assert.equal(background.store.server, 'https://etech.example/app');
 });
 
 test('a failing native call is reported back to the page', async () => {
   const background = loadBackground({
-    native: async (_host, message) => {
+    platform: 'win', native: async (_host, message) => {
       if (message.type === 'open_session') throw new Error('Agent rejected the session');
       return { ok: true };
     },
@@ -84,7 +84,7 @@ test('a failing native call is reported back to the page', async () => {
 // answer, so the bridge must forward the question verbatim.
 test('the page can ask whether a library already has a local folder', async () => {
   const background = loadBackground({
-    native: async (_host, message) => {
+    platform: 'win', native: async (_host, message) => {
       if (message.type === 'query_local_folder') {
         return { ok: true, mode: 'local-edit', local_exists: true, local_path: 'D:\\CloudFileLocal\\sessions\\edit\\repo' };
       }
@@ -97,14 +97,14 @@ test('the page can ask whether a library already has a local folder', async () =
   assert.equal(reply.local_exists, true);
 
   const call = background.nativeCalls.find((item) => item.message.type === 'query_local_folder');
-  assert.equal(call.host, 'com.cloudfile.local_agent');
+  assert.equal(call.host, 'com.cloudfile.current_agent');
   assert.equal(call.message.repo_id, 'repo-1');
   assert.equal(call.message.mode, 'local-edit');
 });
 
 test('a folder query with no library is forwarded anyway, so the agent can refuse it', async () => {
   const background = loadBackground({
-    native: async (_host, message) => (
+    platform: 'win', native: async (_host, message) => (
       message.type === 'query_local_folder' ? { ok: false, error: 'invalid query_local_folder request' } : { ok: true }
     ),
   });
@@ -126,7 +126,7 @@ test('a third-party HTTP origin cannot query local files or folders', async () =
 });
 
 test('failed legacy open_session never authorizes future local queries', async () => {
-  const background = loadBackground({ native: async (_host, message) =>
+  const background = loadBackground({ platform: 'win', native: async (_host, message) =>
     message.type === 'open_session' ? { ok: false } : { ok: true } });
   const result = await background.sendExternal({
     type: 'open_session', protocol: 'cloudfile-open',
@@ -140,7 +140,7 @@ test('V2 scoped URI reaches Rust Agent2 on Windows and macOS, never legacy Host'
   const origin = 'https://etech.example';
   const uri = 'cloudfile-open://v2/open?instance=' + encodeURIComponent(origin) +
     '&session=11111111-1111-4111-8111-111111111111&ticket=aaa.bbb.ccc';
-  for (const platform of ['win', 'mac']) {
+  for (const platform of ['win', 'mac', 'linux']) {
     const b = loadBackground({ platform, native: async (host, message) => {
       if (message.type === 'status') {
         return host === (platform === 'win' ? 'com.cloudfile.current_agent' : 'com.cloudfile.agent2')
