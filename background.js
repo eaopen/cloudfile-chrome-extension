@@ -43,6 +43,13 @@ async function readNativeStatus(host) {
     return status?.ok === true ? status : null;
   } catch { return null; }
 }
+// Agent 报给扩展的版本：`version` 自 2.0.5 起就是构建版本，`build_version` 是同一值的
+// 兼容字段。早期版本把 `version` 放成协议族标记（"2.2.0"），所以这里两种都认，
+// 但**优先用构建版本**，避免「可升级：v2.2.0 → v2.0.5」这种倒挂提示。
+function agentVersion(status) {
+  return status?.build_version || status?.version || '';
+}
+
 function supportsAgent2(status, type) {
   return status?.agent_family === 'agent2' &&
     /^2\.[0-9]+\.[0-9]+$/.test(status.version || '') &&
@@ -72,7 +79,7 @@ async function routeNative(type, payload) {
   // one-time edit credential to the older Windows .NET or macOS Go Host.
   if (type === 'open_uri' && payload.uri.startsWith('cloudfile-open://v2/open?') &&
       !supportsAgent2(selected.status, type))
-    return { ok: false, error: 'V2 本地查看/编辑要求 Rust Agent2；不会回退至旧客户端。' };
+    return { ok: false, error: '本地查看/编辑需要新版 Agent；不会回退到旧客户端。' };
   if (selected.host === AGENT2_HOST && !supportsAgent2(selected.status, type) &&
       !['update', 'update_extension'].includes(type))
     return { ok: false, error: '当前平台 Agent 尚未支持此操作。' };
@@ -162,8 +169,8 @@ async function applyProbe(result) {
   // Local status does not fetch the signed release feed. Keep the most recent
   // successful check while updating the installed version after activation.
   const update = result.latest_version ? toAgentUpdate(result) : {
-    ...(previous || {}), current_version: result.version || previous?.current_version || '',
-    has_update: versionNewer(previous?.latest_version, result.version || previous?.current_version || ''),
+    ...(previous || {}), current_version: agentVersion(result) || previous?.current_version || '',
+    has_update: versionNewer(previous?.latest_version, agentVersion(result) || previous?.current_version || ''),
   };
   await chrome.storage.local.set({ agent_update: update });
   const extension = toExtensionUpdateFromAgent(result);
@@ -175,7 +182,7 @@ async function applyProbe(result) {
 function toAgentUpdate(result) {
   return {
     checked_at: Date.now(),
-    current_version: result.version || '',
+    current_version: agentVersion(result),
     latest_version: result.latest_version || '',
     notes: result.latest_notes || '',
     has_update: !!result.update_available,
@@ -341,7 +348,7 @@ async function verifyUpgrade() {
       await reportStalledUpgrade(kind, target);
       return;
     }
-    if (kind === 'agent' && compareVersions(result.version || '', target) >= 0) {
+    if (kind === 'agent' && compareVersions(agentVersion(result), target) >= 0) {
       await chrome.storage.local.remove('update_verify');
       await refreshUpdates();
       return;

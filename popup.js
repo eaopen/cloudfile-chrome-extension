@@ -88,12 +88,12 @@ helpButton.addEventListener('click', async () => {
 // 查询 Agent 状态，渲染就绪状态、自动检测应用、本地目录与两侧的升级提示。
 chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
   if (chrome.runtime.lastError || !result?.ok) {
-    status.textContent = `Agent 未就绪：${result?.error ?? '请执行绿色包中的注册脚本。'}`;
+    status.textContent = `Agent 未就绪：${result?.error ?? '请先运行安装包里的 install.cmd。'}`;
     status.className = 'status error';
   } else {
-    const agentName = result.selected_family === "agent2" ? "Agent2" :
-    result.selected_family === "agent1" ? "Windows Agent1" : "Go Agent 1.x";
-  status.textContent = `${agentName} 已就绪 · v${result.version}`;
+    // 只写「Agent」，不区分 Go / Windows / Rust 这些实现名 —— 用户不需要知道。
+    // 版本必须是真实构建版本（status.version 已经是 VERSION；build_version 兜底）。
+    status.textContent = `Agent 已就绪 · v${result.build_version || result.version}`;
     status.className = 'status ready';
     // 固定展示支持的本地文件类型，不随本机实际安装的软件版本变化。
     applications.hidden = false;
@@ -141,7 +141,7 @@ function renderTaskSummary(canFocus) {
       row.className = 'task-row';
       const title = document.createElement('span');
       const state = task.needs_review ? '需要检查' :
-        task.local_changed ? '已修改，待确认上传' : '编辑中';
+        task.local_changed ? '已修改，可在任务中心上传' : '编辑中';
       title.textContent = String(task.file_name || '本地文件') + ' · ' + state;
       row.append(title);
       if (canFocus && /^(?:[0-9a-f]{64}|session-[0-9a-f]{64})$/.test(task.task_id || '')) {
@@ -169,7 +169,7 @@ function renderTaskSummary(canFocus) {
 
 function renderAgentUpdate(result) {
   if (!result.update_available) return;
-  updateHeadlines.push(`本地 Agent 可升级：v${result.version} → v${result.latest_version}`);
+  updateHeadlines.push(`本地 Agent 可升级：v${result.build_version || result.version} → v${result.latest_version}`);
   if (result.latest_notes) updateHints.push(result.latest_notes);
   // 命令给出 Agent 的完整路径，用户不必猜 exe 装在哪。
   if (result.executable_path) {
@@ -189,8 +189,8 @@ async function renderExtensionUpdate() {
   updateHeadlines.push(`扩展可升级：v${extension_update.current_version} → v${extension_update.latest_version}`);
   if (extension_update.notes) updateHints.push(extension_update.notes);
   updateExtensionApply.hidden = false;
-  updateHints.push('点「立即升级扩展」自动下载并替换扩展文件，随后扩展会自动重新加载生效（若 Chrome 提示新增权限，按提示确认即可）。');
-  updateHints.push('也可以点下方「安装帮助」，按说明重跑注册脚本，再在 chrome://extensions 点「重新加载」。');
+  updateHints.push('点「立即升级扩展」自动下载并替换扩展文件，随后去扩展页点击刷新重新加载生效（若 Chrome 提示新增权限，按提示确认即可）。');
+  updateHints.push('也可以点下方「安装帮助」，按说明重跑安装包里的 install.cmd，再在 chrome://extensions 点「重新加载」。');
   markUpdateSeen('extension', extension_update.latest_version);
 }
 
