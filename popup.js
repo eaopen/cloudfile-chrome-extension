@@ -19,6 +19,8 @@ const openTaskCenterButton = document.querySelector('#open-task-center');
 const openTaskCenterHint = document.querySelector('#open-task-center-hint');
 
 let workspaceRoot = '';
+// 最近一次 agent_status：帮助页要靠它拿到已配置的服务地址。
+let lastStatus = null;
 
 const HELP_URL = '/cloudfile-updates/help.html';
 
@@ -26,22 +28,6 @@ const HELP_URL = '/cloudfile-updates/help.html';
 // 最后一次性渲染，避免后写的把先写的覆盖掉。
 const updateHeadlines = [];
 const updateHints = [];
-
-// 域名白名单从 manifest.json 的 externally_connectable.matches 自动读取，
-// 不再在 popup.js 里硬编码，站点增删域名只需改 manifest 一处。
-function getManifestOrigins() {
-  try {
-    const manifest = chrome.runtime.getManifest();
-    const matches = (manifest && manifest.externally_connectable
-      && manifest.externally_connectable.matches) || [];
-    // matches 形如 "http://host:port/*"，去掉通配尾缀得到 origin。
-    return matches
-      .map((pattern) => pattern.replace(/\/\*$/, ''))
-      .filter((origin) => /^https?:\/\//.test(origin));
-  } catch {
-    return [];
-  }
-}
 
 function toOrigin(url) {
   try {
@@ -56,35 +42,50 @@ async function currentTabUrl() {
   return (tab && tab.url) || '';
 }
 
-helpButton.addEventListener('click', async () => {
-  const origins = getManifestOrigins();
-  const activeOrigin = toOrigin(await currentTabUrl());
-
-  // 1. 当前活跃 tab 的 origin 在 manifest 白名单内 → 用该 origin 拼静态帮助页打开。
-  if (activeOrigin && origins.includes(activeOrigin)) {
-    chrome.tabs.create({ url: activeOrigin + HELP_URL });
-    return;
-  }
-
-  // 2. 不在白名单域名内，但之前记录过会话 server（origin + siteRoot）→ 用其 origin 兜底打开。
-  let base = '';
+// 帮助页放在 <服务 origin>/cloudfile-updates/help.html。
+// 定位顺序：当前标签页（且确实是已知服务）→ 上次会话记录的 server → Agent 报告的第一个服务。
+// 修改逻辑（2026-10-27）：原来用 manifest 的 externally_connectable 当白名单，可那是
+// http://*/* 通配，`origins.includes(origin)` 永远为 false，所以即使已经打开网盘也一直提示
+// 「请先在浏览器中打开 CloudFile 网盘页面」。服务地址现在由 Agent 直接给出。
+async function storedServerOrigin() {
   try {
     const stored = await chrome.storage.local.get('server');
-    base = toOrigin(stored?.server || '');
+    return toOrigin(stored?.server || '');
   } catch {
-    base = '';
+    return '';
   }
-  if (base) {
-    chrome.tabs.create({ url: base + HELP_URL });
+}
+
+helpButton.addEventListener('click', async () => {
+  const openHelp = (origin) => chrome.tabs.create({ url: origin + HELP_URL });
+  const tabOrigin = toOrigin(await currentTabUrl());
+  const stored = await storedServerOrigin();
+  const services = (lastStatus?.services || [])
+    .map((item) => toOrigin(item.service_url))
+    .filter(Boolean);
+
+  // 1. 当前标签页就是某个已知服务（含内置的两条）→ 用它。
+  if (tabOrigin && (services.includes(tabOrigin) || tabOrigin === stored)) {
+    openHelp(tabOrigin);
     return;
   }
-
-  // 3. 两者都没有 → 引导用户先进入网盘页面。
-  showHelpHint('请先在浏览器中打开 CloudFile 网盘页面，再从该页面点击扩展图标打开安装帮助。');
+  // 2. 之前在这个浏览器里完成过配对 → 用记录的服务地址。
+  if (stored) {
+    openHelp(stored);
+    return;
+  }
+  // 3. 当前页不是网盘：退到 Agent 配置的第一个服务（内置服务通常就是它）。
+  if (services.length) {
+    openHelp(services[0]);
+    return;
+  }
+  // 4. 一条都没有：说明 Agent 还没装好/没配置，给出可执行的下一步。
+  showHelpHint('没有拿到 CloudFile 服务地址：请先运行安装包里的 install.cmd，或在网盘里发起一次「本地打开」后再试。');
 });
 
 // 查询 Agent 状态，渲染就绪状态、自动检测应用、本地目录与两侧的升级提示。
 chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
+  lastStatus = result?.ok ? result : null;
   if (chrome.runtime.lastError || !result?.ok) {
     status.textContent = `Agent 未就绪：${result?.error ?? '请先运行安装包里的 install.cmd。'}`;
     status.className = 'status error';
