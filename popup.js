@@ -201,20 +201,73 @@ function renderUpdateSection() {
   }
 }
 
-// 升级按钮：Agent 与扩展共用一套流程。请求返回只代表后台已开始，
-// 真正的结果由扩展后台复核后在提示区给出。
+// 升级按钮：只有扩展自己在弹窗里升级（Agent 的升级在任务中心「设置 → 检查更新」）。
+//
+// 请求返回**只代表后台已受理**：native-host 是用分离进程去下载、校验、替换的，
+// 它回的是一条「已开始」。所以这里必须自己轮询真实结果，否则用户点完只看到「已开始」，
+// 永远等不到成功或失败（2026-10-27 现场反馈）。
+const UPGRADE_POLL_MS = 1500;
+const UPGRADE_TIMEOUT_MS = 90000;
+
 function wireUpgrade(button, kind) {
   button.addEventListener('click', () => {
     button.disabled = true;
+    setUpdateStatus('正在下载并替换扩展文件…');
     chrome.runtime.sendMessage({ type: 'upgrade', kind }, (result) => {
-      button.disabled = false;
       if (chrome.runtime.lastError || !result?.ok) {
+        button.disabled = false;
         setUpdateStatus(`升级失败：${result?.error ?? 'Agent 未响应。'}`);
         return;
       }
-      setUpdateStatus('已开始升级扩展：正在后台下载并替换扩展文件，完成后扩展会自动重新加载。');
+      pollExtensionUpgrade(button, result.target || '');
     });
   });
+}
+
+// 轮询后台拿真实结果：completed / failed / 还没好就继续等。
+function pollExtensionUpgrade(button, target) {
+  const deadline = Date.now() + UPGRADE_TIMEOUT_MS;
+  const tick = () => {
+    chrome.runtime.sendMessage({ type: 'extension_upgrade_state', target }, (state) => {
+      if (chrome.runtime.lastError) {
+        button.disabled = false;
+        setUpdateStatus(`升级结果未知：${chrome.runtime.lastError.message}。\n请到 chrome://extensions 查看本扩展显示的版本号。`);
+        return;
+      }
+      if (state?.state === 'completed') {
+        // **不自动重载**：chrome.runtime.reload() 会把弹窗一起关掉，用户看不到任何
+        // 成功提示，还会打断正在编辑的动作。这里明确让他去扩展页点刷新。
+        button.disabled = true;
+        button.hidden = true;
+        updateExtensionApply.hidden = true;
+        updateActions.hidden = true;
+        updateHint.hidden = true;
+        setUpdateStatus(
+          `升级成功：扩展文件已更新到 v${state.version}。\n` +
+          '请在地址栏打开 chrome://extensions，点本扩展卡片上的刷新按钮（重新加载）后生效，不需要重装。',
+        );
+        return;
+      }
+      if (state?.state === 'failed' || state?.ok === false) {
+        button.disabled = false;
+        setUpdateStatus(
+          `升级失败：${state?.error ?? '未能确认升级结果。'}\n` +
+          '可以再点一次「立即升级扩展」重试；仍然失败就按「安装帮助」里的方式重装扩展。',
+        );
+        return;
+      }
+      if (Date.now() >= deadline) {
+        button.disabled = false;
+        setUpdateStatus(
+          '升级还没完成（可能仍在下载）。\n' +
+          '可以再点一次「立即升级扩展」，或到 chrome://extensions 看本扩展的版本号是否已经是新版本。',
+        );
+        return;
+      }
+      setTimeout(tick, UPGRADE_POLL_MS);
+    });
+  };
+  tick();
 }
 
 // 只有扩展自己在这个弹窗里升级；Agent 的升级交给任务中心（设置 → 检查更新）。

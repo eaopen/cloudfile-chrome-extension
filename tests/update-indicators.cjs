@@ -106,3 +106,52 @@ test('Agent2.3 staged-but-deferred updates are not falsely reported as failed', 
   assert.equal(b.store.update_prepared?.target, '2.3.0-dev.2');
   assert.equal(b.store.update_notified?.agent, undefined);
 });
+
+test('extension upgrade reports the real outcome and never auto-reloads', async () => {
+  // 磁盘上已经是新版本：即使 update-result 还写着 running，也算完成。
+  const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'status') return { ok: true, version: '2.0.10', agent_family: 'agent2',
+      extension_installed_version: '2.0.10', extension_latest_version: '2.0.10',
+      last_update_kind: 'extension', last_update_state: 'running' };
+    if (msg.type === 'update_extension') return { ok: true };
+    return { ok: true };
+  }});
+  b.store.extension_update = { has_update: true, current_version: '2.0.9', latest_version: '2.0.10' };
+  const accepted = await b.sendInternal({ type: 'upgrade', kind: 'extension' });
+  assert.equal(accepted.ok, true);
+  // 弹窗要靠 target 判断「到底升上去了没有」。
+  assert.equal(accepted.target, '2.0.10');
+  const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.10' });
+  assert.equal(state.state, 'completed');
+  assert.equal(state.version, '2.0.10');
+});
+
+test('a still-running extension upgrade keeps the popup polling', async () => {
+  const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'status') return { ok: true, version: '2.0.10', agent_family: 'agent2',
+      extension_installed_version: '2.0.9', last_update_kind: 'extension', last_update_state: 'running' };
+    return { ok: true };
+  }});
+  const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.10' });
+  assert.equal(state.ok, true);
+  assert.equal(state.state, 'running');
+});
+
+test('a failed extension upgrade surfaces as failed, not as success', async () => {
+  const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'status') return { ok: true, version: '2.0.10', agent_family: 'agent2',
+      extension_installed_version: '2.0.9', last_update_kind: 'extension', last_update_state: 'failed' };
+    return { ok: true };
+  }});
+  const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.10' });
+  assert.equal(state.ok, false);
+  assert.equal(state.state, 'failed');
+  assert.match(state.error, /失败/);
+});
+
+test('an unresponsive agent cannot be mistaken for a successful upgrade', async () => {
+  const b = loadBackground({ platform: 'win', native: async () => { throw new Error('host gone'); } });
+  const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.10' });
+  assert.equal(state.ok, false);
+  assert.equal(state.state, 'unknown');
+});

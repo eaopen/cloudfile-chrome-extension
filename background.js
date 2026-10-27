@@ -355,13 +355,11 @@ async function verifyUpgrade() {
     }
     if (kind === 'extension' && compareVersions(result.extension_installed_version || '', target) >= 0) {
       await chrome.storage.local.remove('update_verify');
-      // 新文件已经落盘：加载已解压扩展不会自升级，重载一次即可生效。
-      try {
-        chrome.runtime.reload();
-        return;
-      } catch {
-        // 重载失败则退回下面的提示路径。
-      }
+      // 修改逻辑（2026-10-27）：**不再** chrome.runtime.reload()。
+      // 自动重载会把弹窗一起关掉（用户看不到成功提示），还会打断他正在做的事；
+      // 现在由弹窗告诉他去 chrome://extensions 点刷新，这条告警只负责清状态。
+      await refreshUpdates().catch(() => {});
+      return;
     }
   }
   if (attempts + 1 >= VERIFY_ATTEMPTS) {
@@ -640,6 +638,31 @@ async function handleInternal(message) {
   if (message?.type === 'upgrade') {
     return startUpgrade(message.kind);
   }
+  if (message?.type === 'extension_upgrade_state') {
+    // 扩展升级由 native-host 的分离进程完成（下载 → 校验 sha256 → 解包 → 原子换目录），
+    // 它只在**受理时**回一条 ok，真实结果写进 update-result.json 和磁盘上的 manifest。
+    // 弹窗每 1.5s 问一次这里。
+    const { extension_update } = await chrome.storage.local.get('extension_update');
+    const target = message.target || extension_update?.latest_version || '';
+    const result = await probeAgentStatus();
+    if (!result) return { ok: false, state: 'unknown', error: 'Agent 未响应，无法确认升级结果。' };
+    const installed = result.extension_installed_version || '';
+    if (target && compareVersions(installed, target) >= 0) {
+      // 磁盘上已经是新版本：清掉角标/提示，剩下只要用户点一次刷新。
+      // 不 await —— 它要重新拉一次更新源，别让弹窗的轮询等网络。
+      void refreshUpdates().catch(() => {});
+      return { ok: true, state: 'completed', version: installed };
+    }
+    const state = result.last_update_kind === 'extension' ? result.last_update_state || '' : '';
+    if (state === 'failed') {
+      return {
+        ok: false,
+        state: 'failed',
+        error: '下载或替换扩展文件失败（Agent 记为 failed）。',
+      };
+    }
+    return { ok: true, state: state === 'running' ? 'running' : 'pending', version: installed };
+  }
   if (message?.type === 'open_task_center') {
     // 任务中心可能被用户手动关掉。native host 会先试着把已在跑的实例切前台，
     // 没人接才拉起新进程 —— 扩展这边不需要知道它是哪种情况。
@@ -695,7 +718,8 @@ async function startUpgrade(kind) {
       const accepted = await sendNative({ type: 'update_extension' });
       if (accepted?.ok !== true) return { ok: false, error: accepted?.error || '扩展升级未获得 Agent 确认。' };
       await scheduleUpgradeVerify('extension', extension_update.latest_version);
-      return { ok: true };
+      // target 给弹窗用：它要靠这个版本号判断「到底升上去了没有」。
+      return { ok: true, target: extension_update.latest_version };
     }
     const { agent_update } = await chrome.storage.local.get('agent_update');
     if (!agent_update?.latest_version) return { ok: false, error: '暂时拿不到 Agent 更新版本，请先检查更新。' };
