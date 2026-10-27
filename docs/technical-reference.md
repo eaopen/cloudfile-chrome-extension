@@ -106,3 +106,8 @@ Related changes:
 [Hub view ticket](https://github.com/eaopen/cloudfile-hub/pull/27) ·
 [Fileserver authorization](https://github.com/eaopen/cloudfile-server/pull/11) ·
 [Agent2 session handler](https://github.com/eaopen/cloudfile-local-agent2/pull/6).
+
+
+## Generic Local Bridge 迁移兼容（规划）
+
+见 [Bridge 兼容合同 V1](bridge-compatibility-v1.md)。此规划不改变当前扩展 Host 路由、Native Messaging、安全票据和既有 CloudFile 文件操作；需待独立 DEV 实机验证后才可启用新入口。
