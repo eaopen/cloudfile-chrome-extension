@@ -19,3 +19,9 @@
 /* Keep passive task summaries compact while preserving comfortable action targets. */
 #task-summary > .workspace-hint:first-child{margin-top:0}
 button:focus-visible{outline:2px solid var(--moss);outline-offset:3px}
+/* 「打开任务中心」：Agent 就绪时的主操作（2026-10-27）。 */
+.primary-actions{display:flex;gap:8px;margin:8px 0 4px}
+.primary-actions button{flex:1;min-height:36px;font:inherit;font-size:12px;letter-spacing:.02em;padding:8px 12px;border:2px solid var(--ink);background:var(--lime);color:var(--ink);cursor:pointer;transition:.12s ease}
+.primary-actions button:hover{background:#c9f27c}
+.primary-actions button:active{transform:translateY(1px)}
+.primary-actions button:disabled{opacity:.55;cursor:default;transform:none}

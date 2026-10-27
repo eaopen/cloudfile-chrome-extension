@@ -12,6 +12,10 @@
     <h1>本地会话接收器</h1>
     <p class="intro">在 CloudFile 网页选择本地打开或编辑，即可使用本机应用处理文件。</p>
     <div id="status" class="status" aria-live="polite">正在检查 Agent…</div>
+    <div class="primary-actions">
+      <button id="open-task-center" type="button" hidden>打开任务中心</button>
+    </div>
+    <p id="open-task-center-hint" class="workspace-hint" hidden></p>
     <p id="applications" class="applications" hidden></p>
     <section id="workspace" class="workspace" hidden>
       <p class="workspace-label">本地文件目录</p>
@@ -29,11 +33,8 @@
     <section id="update" class="update" hidden>
       <p class="update-label">有新版本可用</p>
       <p id="update-text" class="update-text"></p>
-      <code id="update-command" class="update-command" hidden></code>
       <div id="update-actions" class="update-actions" hidden>
-        <button id="update-apply" type="button" hidden>立即升级 Agent</button>
         <button id="update-extension-apply" type="button" hidden>立即升级扩展</button>
-        <button id="update-copy" type="button" hidden>复制升级命令</button>
       </div>
       <p id="update-hint" class="update-hint" hidden></p>
       <p id="update-status" class="update-status" hidden></p>

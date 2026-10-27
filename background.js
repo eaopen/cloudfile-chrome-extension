@@ -640,6 +640,11 @@ async function handleInternal(message) {
   if (message?.type === 'upgrade') {
     return startUpgrade(message.kind);
   }
+  if (message?.type === 'open_task_center') {
+    // 任务中心可能被用户手动关掉。native host 会先试着把已在跑的实例切前台，
+    // 没人接才拉起新进程 —— 扩展这边不需要知道它是哪种情况。
+    return routeNative('open_task_center', { type: 'open_task_center' });
+  }
   if (message?.type === 'open_workspace') {
     return routeNative('open_workspace', { type: 'open_workspace' });
   }

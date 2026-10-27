@@ -11,16 +11,14 @@ const taskCenter = document.querySelector('#task-center');
 const taskSummary = document.querySelector('#task-summary');
 const updateSection = document.querySelector('#update');
 const updateText = document.querySelector('#update-text');
-const updateCommand = document.querySelector('#update-command');
 const updateActions = document.querySelector('#update-actions');
-const updateApply = document.querySelector('#update-apply');
 const updateExtensionApply = document.querySelector('#update-extension-apply');
-const updateCopy = document.querySelector('#update-copy');
 const updateHint = document.querySelector('#update-hint');
 const updateStatus = document.querySelector('#update-status');
+const openTaskCenterButton = document.querySelector('#open-task-center');
+const openTaskCenterHint = document.querySelector('#open-task-center-hint');
 
 let workspaceRoot = '';
-let agentUpdateCommand = '';
 
 const HELP_URL = '/cloudfile-updates/help.html';
 
@@ -95,6 +93,8 @@ chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
     // 版本必须是真实构建版本（status.version 已经是 VERSION；build_version 兜底）。
     status.textContent = `Agent 已就绪 · v${result.build_version || result.version}`;
     status.className = 'status ready';
+    // 任务中心被用户手动关掉时，扩展是唯一还能把它叫回来的入口。
+    openTaskCenterButton.hidden = false;
     // 固定展示支持的本地文件类型，不随本机实际安装的软件版本变化。
     applications.hidden = false;
     applications.textContent = '自动检测：CAD、UG、Office、PDF';
@@ -169,17 +169,11 @@ function renderTaskSummary(canFocus) {
 
 function renderAgentUpdate(result) {
   if (!result.update_available) return;
-  updateHeadlines.push(`本地 Agent 可升级：v${result.build_version || result.version} → v${result.latest_version}`);
+  updateHeadlines.push(`本地 Agent 有新版本：v${result.build_version || result.version} → v${result.latest_version}`);
   if (result.latest_notes) updateHints.push(result.latest_notes);
-  // 命令给出 Agent 的完整路径，用户不必猜 exe 装在哪。
-  if (result.executable_path) {
-    agentUpdateCommand = `"${result.executable_path}" --update`;
-    updateCommand.hidden = false;
-    updateCommand.textContent = agentUpdateCommand;
-    updateCopy.hidden = false;
-  }
-  updateApply.hidden = false;
-  updateHints.push('点「立即升级 Agent」自动下载安装，完成后会自动复核版本号；也可点「复制升级命令」在 PowerShell 中手动执行。');
+  // 不在扩展里升级 Agent：统一引导到任务中心的「设置 → 检查更新」，
+  // 那边有完整的状态反馈和下载进度。扩展自己的升级按钮仍然保留。
+  updateHints.push('请在任务中心「设置 → 检查更新」里升级本机 Agent。');
   markUpdateSeen('agent', result.latest_version);
 }
 
@@ -198,8 +192,8 @@ function renderUpdateSection() {
   if (!updateHeadlines.length) return;
   updateSection.hidden = false;
   updateText.textContent = updateHeadlines.join('\n');
-  // 「复制升级命令」和「立即升级」可能各自隐藏，这里统一按可见的按钮决定整块是否显示。
-  updateActions.hidden = updateApply.hidden && updateExtensionApply.hidden && updateCopy.hidden;
+  // 现在只有扩展自己的升级按钮，整块显隐只看它。
+  updateActions.hidden = updateExtensionApply.hidden;
   if (updateHints.length) {
     updateHint.hidden = false;
     updateHint.textContent = updateHints.join('\n');
@@ -217,14 +211,12 @@ function wireUpgrade(button, kind) {
         setUpdateStatus(`升级失败：${result?.error ?? 'Agent 未响应。'}`);
         return;
       }
-      setUpdateStatus(kind === 'extension'
-        ? '已开始升级扩展：正在后台下载并替换扩展文件，完成后扩展会自动重新加载。'
-        : '已开始升级 Agent：正在后台下载并安装，稍后会自动复核版本号。');
+      setUpdateStatus('已开始升级扩展：正在后台下载并替换扩展文件，完成后扩展会自动重新加载。');
     });
   });
 }
 
-wireUpgrade(updateApply, 'agent');
+// 只有扩展自己在这个弹窗里升级；Agent 的升级交给任务中心（设置 → 检查更新）。
 wireUpgrade(updateExtensionApply, 'extension');
 
 // 用户已经看到了该版本的提示 → 告诉后台清掉角标、不再为这个版本弹系统通知。
@@ -233,15 +225,21 @@ function markUpdateSeen(kind, version) {
   chrome.runtime.sendMessage({ type: 'updates_seen', kind, version }).catch(() => {});
 }
 
-// 「复制升级命令」：把完整命令放进剪贴板，供用户在 PowerShell 里兜底执行。
-updateCopy.addEventListener('click', async () => {
-  if (!agentUpdateCommand) return;
-  try {
-    await navigator.clipboard.writeText(agentUpdateCommand);
-    setUpdateStatus('升级命令已复制，请在 PowerShell 中粘贴运行。');
-  } catch {
-    setUpdateStatus('复制失败，请手动选中命令内容并复制。');
-  }
+openTaskCenterButton.addEventListener('click', () => {
+  openTaskCenterButton.disabled = true;
+  openTaskCenterHint.hidden = true;
+  chrome.runtime.sendMessage({ type: 'open_task_center' }, (result) => {
+    openTaskCenterButton.disabled = false;
+    if (chrome.runtime.lastError || !result?.ok) {
+      openTaskCenterHint.hidden = false;
+      openTaskCenterHint.textContent = `无法打开任务中心：${result?.error ?? 'Agent 未响应，请重新运行安装包里的 install.cmd。'}`;
+      return;
+    }
+    openTaskCenterHint.hidden = false;
+    openTaskCenterHint.textContent = result.launched
+      ? '任务中心正在启动…'
+      : '任务中心已切到前台。';
+  });
 });
 
 openButton.addEventListener('click', () => {
