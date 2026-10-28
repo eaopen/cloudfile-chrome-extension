@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 空 favicon：不发这一行的话浏览器会去请求 /favicon.ico，控制台多一条 404。 -->
+  <link rel="icon" href="data:,">
+  <title>安装本地打开组件</title>
+  <style>
+    :root {
+      --ink: #16211e;
+      --muted: #5d645f;
+      --accent: #60841b;
+      --accent-dark: #3f5a10;
+      --code-bg: #dce9bc;
+      --warn-border: #d1a143;
+      --warn-bg: #f3f0e7;
+      --ok-border: #60841b;
+      --ok-bg: #e0e6ce;
+      --err-border: #a64332;
+      --err-bg: #f7e6e3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: #fff;
+    }
+    .shell { max-width: 700px; margin: 0 auto; padding: 32px 24px 56px; }
+    .eyebrow { display: block; font-size: 11px; letter-spacing: .14em; color: var(--accent); margin-bottom: 6px; }
+    h1 { font-size: 26px; margin: 0 0 20px; letter-spacing: -.02em; }
+    .status {
+      padding: 11px 14px; margin: 0 0 24px; border-left: 4px solid var(--warn-border);
+      background: var(--warn-bg);
+    }
+    .status.is-ok { border-color: var(--ok-border); background: var(--ok-bg); }
+    .status.is-missing { border-color: var(--err-border); background: var(--err-bg); color: var(--err-border); }
+    ol.steps { list-style: none; margin: 0; padding: 0; }
+    .step { display: flex; gap: 14px; margin-bottom: 24px; }
+    .idx {
+      flex: none; width: 26px; height: 26px; border: 2px solid var(--ink); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; margin-top: 3px;
+    }
+    .step h3 { margin: 0 0 6px; font-size: 15px; }
+    .step p { margin: 6px 0; color: #333; }
+    a.link { color: var(--accent); font-weight: 600; }
+    code {
+      background: var(--code-bg); border-radius: 4px; padding: 2px 6px;
+      font-size: 12px; word-break: break-all; font-family: Consolas, Monaco, monospace;
+    }
+    kbd {
+      border: 1px solid #c3c8bb; border-bottom-width: 2px; border-radius: 4px;
+      padding: 1px 5px; font: 12px Consolas, Monaco, monospace; background: #f6f7f3;
+    }
+    .hint { font-size: 12px; color: var(--muted); }
+    pre.code {
+      background: var(--code-bg); border-radius: 4px; padding: 10px 12px; margin: 8px 0;
+      overflow-x: auto; font-size: 12px; font-family: Consolas, Monaco, monospace; line-height: 1.6;
+    }
+    pre.code code { background: none; padding: 0; }
+    .versions { margin: 28px 0 0; font-size: 12px; color: var(--muted); }
+    details.fallback { margin-top: 10px; font-size: 12px; color: var(--muted); }
+    details.fallback summary { cursor: pointer; }
+    details.fallback p { color: var(--muted); }
+    .note { margin-top: 18px; padding-top: 14px; border-top: 1px solid #dcdfd6; font-size: 12px; color: var(--muted); }
+    figure.shot { margin: 10px 0 4px; }
+    figure.shot img {
+      display: block; width: 100%; height: auto;
+      border: 1px solid #dcdfd6; border-radius: 6px; background: #fff;
+    }
+    figure.shot figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <span class="eyebrow">CLOUDFILE / LOCAL APP</span>
+    <h1>安装本地打开组件</h1>
+
+    <p id="status" class="status">正在检测扩展…</p>
+
+    <ol class="steps">
+      <li class="step">
+        <span class="idx">1</span>
+        <div>
+          <h3>下载并运行安装程序</h3>
+          <p>下载 <a id="install-cmd" class="link" href="./install.cmd" download="install.cmd">install.cmd</a>，双击运行，等它跑完。</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="idx">2</span>
+        <div>
+          <h3>任务中心安装引导</h3>
+          <p><b>打开安装完成后的任务中心</b>：点 安装引导 <b>⋮</b> →「安装或修复本机目录」→ 点击扩展目录下的地址复制</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="idx">3</span>
+        <div>
+          <h3>启用扩展</h3>
+
+          <p><b>① 打开扩展管理页</b>：点 Chrome 右上角的 <b>⋮</b> →「扩展程序」→「管理扩展程序」；
+             （找不到菜单时，直接在地址栏输入 <code>chrome://extensions</code> 回车也一样。）</p>
+          <figure class="shot">
+            <img src="img/ext-open.png" alt="Chrome 的扩展程序页" loading="lazy">
+            <figcaption>右上角那个就是「开发者模式」开关，默认是关的（灰色）。</figcaption>
+          </figure>
+
+          <p><b>② 打开「开发者模式」</b>：点右上角的开关，让它变成蓝色。</p>
+          <figure class="shot">
+            <img src="img/dev-mode.png" alt="打开开发者模式" loading="lazy">
+            <figcaption>打开后，左上角会多出一排按钮。</figcaption>
+          </figure>
+
+          <p><b>③ 点「加载未打包的扩展程序」</b>：左上角第一个按钮。</p>
+          <figure class="shot">
+            <img src="img/load-unpacked.png" alt="点击加载未打包的扩展程序" loading="lazy">
+          </figure>
+
+          <p><b>④ 在文件夹窗口里粘贴扩展目录</b>：按 <kbd>Ctrl+L</kbd> 选中地址栏 →
+             <kbd>Ctrl+V</kbd> 粘贴 → 回车 → 点「选择文件夹」。</p>
+          <figure class="shot">
+            <img src="img/pick-folder.png" alt="选择扩展程序文件夹" loading="lazy">
+            <figcaption>窗口停在哪个目录都不要紧，按 Ctrl+L 再粘贴就会跳到正确位置。</figcaption>
+          </figure>
+
+          <p class="hint">本页不复制任何内容，剪贴板里始终是安装程序放好的<b>扩展目录</b>，第 ④ 步直接粘贴即可；
+            万一粘贴不出来，回到安装窗口复制那一行路径或者任务中心的安装引导页复制扩展地址。</p>
+          <p class="hint">装好后扩展 ID 应为 <code id="ext-id">gocnpbhnbikcpnlafmodflddgnmfcjoc</code>。</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="idx">3</span>
+        <div>
+          <h3>验证</h3>
+          <p>扩展列表里出现下面这张卡片就装好了；再点浏览器工具栏上的 CloudFile 图标，显示「Agent 已就绪」即完成。</p>
+          <figure class="shot">
+            <img src="img/installed.png" alt="扩展已安装并处于启用状态" loading="lazy">
+          </figure>
+        </div>
+      </li>
+    </ol>
+
+    <p class="note">以后升级不用再跑安装：点扩展图标里的「立即升级」即可。</p>
+
+    <p id="versions" class="versions">当前最新版本：Agent — / 扩展 —</p>
+
+    <details class="fallback">
+      <summary>公司策略禁止双击运行 .cmd？</summary>
+      <p>打开下载目录，在文件管理器地址栏输入cmd回车，在弹出的黑窗口输入刚刚下载的  install.cmd  按回车即可。</p>
+    </details>
+  </main>
+
+  <script>
+    const EXTENSION_ID = 'gocnpbhnbikcpnlafmodflddgnmfcjoc';
+
+    // 帮助页所在的静态发布目录（如 http://host:port/cloudfile-updates/）。
+    const DIR = new URL('.', window.location.href).href;              // 带尾斜杠
+
+    function setText(id, text) { document.getElementById(id).textContent = text; }
+
+    // 扩展可达性探测（静态页 origin 已纳入扩展 externally_connectable 白名单）。
+    (function detectExtension() {
+      const statusEl = document.getElementById('status');
+      const runtime = window.chrome && window.chrome.runtime;
+      if (!runtime || typeof runtime.sendMessage !== 'function') {
+        statusEl.className = 'status is-missing';
+        setText('status', '⚠ 还没装扩展，按下面第 3 步安装。');
+        return;
+      }
+      runtime.sendMessage(EXTENSION_ID, { type: 'ping' }, () => {
+        if (runtime.lastError) {
+          statusEl.className = 'status is-missing';
+          setText('status', '⚠ 还没装扩展，按下面第 3 步安装。');
+        } else {
+          statusEl.className = 'status is-ok';
+          setText('status', '✅ 已装好扩展，本地打开功能可用。');
+        }
+      });
+    })();
+
+    // 这里刻意不提供"一键复制 chrome://extensions"的按钮：本页一旦往剪贴板里写东西，
+    // 就会把安装程序放好的**扩展目录**顶掉，第 ③ 步（文件夹窗口粘贴路径）立刻失效。
+    // 而网页又无法跳转到 chrome:// 地址（链接、location.href、target=_blank、window.open
+    // 实测全被拦，控制台报 Not allowed to load local resource），所以「打开扩展管理页」
+    // 只能靠用户点浏览器自己的菜单：右上角 ⋮ →「扩展程序」→「管理扩展程序」。
+
+    // 从同目录的 cloudfile-agent2-update.json / extension-update.json 读版本号，发版只更新这两个 JSON。
+    (async function loadManifests() {
+      // 下载链接**第一件事**就定好：它决定了用户能不能开始装。
+      // 修改逻辑（2026-10-28）：这里原来先给 #agent-script 赋值，而那个元素早就从页面里
+      // 删掉了 —— getElementById 返回 null 抛 TypeError，整个 IIFE 当场中断，
+      // #install-cmd 的 href 永远停在 "#"，叠加 download 属性后点一下下载的是本页 help.html。
+      // 现在：① 第一件事就是设好下载链接；② 链接本身也带 download="install.cmd" 兜底。
+      // （原来的 #agent-script / #register-cmd 已经从页面删掉了，相关代码一并移除。）
+      document.getElementById('install-cmd').href = DIR + 'install.cmd';
+
+      let agent = null, ext = null;
+      try {
+        const r = await fetch(DIR + 'extension-update.json');
+        if (r.ok) ext = await r.json();
+      } catch (e) { /* ignore */ }
+      // Agent 清单的真实文件名是 cloudfile-agent2-update.json；update.json 只作历史兼容。
+      for (const name of ['cloudfile-agent2-update.json', 'update.json']) {
+        try {
+          const r = await fetch(DIR + name);
+          if (r.ok) { agent = await r.json(); break; }
+        } catch (e) { /* ignore */ }
+      }
+
+      setText('versions', '当前最新版本：Agent ' + ((agent && agent.version) || '—')
+        + ' / 扩展 ' + ((ext && ext.version) || '—'));
+
+    })();
+  </script>
+</body>
+</html>

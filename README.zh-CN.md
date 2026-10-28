@@ -23,6 +23,8 @@ V2 本地查看、本地编辑和独占编辑共用受信 `cloudfile-open://v2/o
 node --test tests/*.cjs
 ```
 
+`help/help.html`（连同 `help/img/`）是发布到更新通道的静态安装引导页 `<服务>/cloudfile-updates/help.html`，**不在扩展包内**（由发版脚本同步）；`tests/help-page.cjs` 守着它：脚本碰到的每个元素都必须在页面里存在，`install.cmd` 的下载链接必须带显式文件名。
+
 商店发布、Host 路由、自动更新及权限说明均维护在技术参考，不在这里重复正文。
 
 ## 许可

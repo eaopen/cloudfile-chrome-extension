@@ -19,6 +19,8 @@ The package version is defined in [manifest.json](manifest.json). Developer-mode
 node --test tests/*.cjs
 ```
 
+`help/help.html` (with `help/img/`) is the static installation-guide page published to the update channel as `<service>/cloudfile-updates/help.html`. It is **not** part of the extension package — the release script syncs it — and `tests/help-page.cjs` keeps it honest: every element the inline script touches must exist in the page, and the `install.cmd` link must keep its explicit `download` name.
+
 Store publication, Host routing, automatic updates and permissions are maintained in the technical reference.
 
 ## License

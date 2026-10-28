@@ -1,0 +1,3 @@
+# 帮助页会原样发布到更新通道（<服务>/cloudfile-updates/help.html），换行按文件自身来，
+# 别让 Windows 的 autocrlf 把它改成 CRLF —— 否则每次 checkout 都会和通道那份产生字节差异。
+help/** -text
