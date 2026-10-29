@@ -71,6 +71,18 @@
       border: 1px solid #dcdfd6; border-radius: 6px; background: #fff;
     }
     figure.shot figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    /* 扩展目录的两个候选地址：点一下整块就复制（第 3 步 ④ 用）。
+       本页跑在内网 http 上，navigator.clipboard 在非安全上下文里拿不到，脚本里有 execCommand 兜底。 */
+    .copies { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+    .copy {
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      background: var(--code-bg); border: 1px solid #c3ce9c; border-radius: 6px;
+      padding: 8px 12px; font: inherit; color: var(--ink); cursor: pointer;
+    }
+    .copy:hover { border-color: var(--accent); }
+    .copy .copy-label { flex: none; font-size: 12px; color: var(--muted); }
+    .copy code { background: none; padding: 0; font-size: 12px; }
+    .copy .copy-state { flex: none; margin-left: auto; font-size: 12px; color: var(--accent-dark); }
   </style>
 </head>
 <body>
@@ -91,8 +103,10 @@
       <li class="step">
         <span class="idx">2</span>
         <div>
-          <h3>任务中心安装引导</h3>
-          <p><b>打开安装完成后的任务中心</b>：点 安装引导 <b>⋮</b> →「安装或修复本机目录」→ 点击扩展目录下的地址复制</p>
+          <h3>在任务中心里装本机组件</h3>
+          <p>安装脚本跑完会自动打开<b>任务中心</b>；没打开的话，用开始菜单或桌面上的「CloudFile 任务中心」打开它。</p>
+          <p>点左侧导航的「<b>安装引导</b>」，再点「<b>安装或修复本机组件</b>」。
+             它会把 Chrome Host 注册好、把扩展包解压到本机，第 5 步会显示扩展目录和是否完成。</p>
         </div>
       </li>
       <li class="step">
@@ -118,20 +132,35 @@
             <img src="img/load-unpacked.png" alt="点击加载未打包的扩展程序" loading="lazy">
           </figure>
 
-          <p><b>④ 在文件夹窗口里粘贴扩展目录</b>：按 <kbd>Ctrl+L</kbd> 选中地址栏 →
-             <kbd>Ctrl+V</kbd> 粘贴 → 回车 → 点「选择文件夹」。</p>
+          <p><b>④ 在文件夹窗口里粘贴扩展目录</b>：先点下面的地址<b>复制</b> →
+             在弹窗里按 <kbd>Ctrl+L</kbd> 选中地址栏 → <kbd>Ctrl+V</kbd> 粘贴 → 回车 → 点「选择文件夹」（不要点进里面的 icons 目录）。</p>
+          <div class="copies">
+            <button type="button" class="copy" data-copy="D:\CloudFileAgent\extension">
+              <span class="copy-label">有 D 盘（默认）</span>
+              <code>D:\CloudFileAgent\extension</code>
+              <span class="copy-state">点击复制</span>
+            </button>
+            <button type="button" class="copy" data-copy="%LOCALAPPDATA%\CloudFileAgent\extension">
+              <span class="copy-label">没有 D 盘</span>
+              <code>%LOCALAPPDATA%\CloudFileAgent\extension</code>
+              <span class="copy-state">点击复制</span>
+            </button>
+          </div>
+          <p class="hint">装在哪台机器上就用哪个地址：绝大多数机器用第一个（Agent 默认装到 D 盘）；
+             机器上没有 D 盘时用第二个，<code>%LOCALAPPDATA%</code> 会自己展开成当前用户的
+             <code>AppData\Local</code>。地址以任务中心「安装引导」第 5 步显示的为准。</p>
           <figure class="shot">
             <img src="img/pick-folder.png" alt="选择扩展程序文件夹" loading="lazy">
             <figcaption>窗口停在哪个目录都不要紧，按 Ctrl+L 再粘贴就会跳到正确位置。</figcaption>
           </figure>
 
-          <p class="hint">本页不复制任何内容，剪贴板里始终是安装程序放好的<b>扩展目录</b>，第 ④ 步直接粘贴即可；
-            万一粘贴不出来，回到安装窗口复制那一行路径或者任务中心的安装引导页复制扩展地址。</p>
+          <p class="hint">点不动、或者显示「复制失败」时，手动选中那行地址按 <kbd>Ctrl+C</kbd>；
+             也可以回任务中心「安装引导」第 5 步，点扩展目录那一行复制。</p>
           <p class="hint">装好后扩展 ID 应为 <code id="ext-id">gocnpbhnbikcpnlafmodflddgnmfcjoc</code>。</p>
         </div>
       </li>
       <li class="step">
-        <span class="idx">3</span>
+        <span class="idx">4</span>
         <div>
           <h3>验证</h3>
           <p>扩展列表里出现下面这张卡片就装好了；再点浏览器工具栏上的 CloudFile 图标，显示「Agent 已就绪」即完成。</p>
@@ -160,6 +189,41 @@
 
     function setText(id, text) { document.getElementById(id).textContent = text; }
 
+    // 复制扩展目录（第 3 步 ④）。本页跑在内网 http 上，不是安全上下文，
+    // navigator.clipboard 在那里拿不到 —— 必须有 execCommand 兜底，否则按钮点了没反应，
+    // 用户会以为地址写错了。
+    function copyText(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          return navigator.clipboard.writeText(text).then(() => true, () => false);
+        }
+      } catch (e) { /* 落到 execCommand */ }
+      try {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.top = '-1000px';
+        document.body.append(area);
+        area.select();
+        const ok = document.execCommand('copy');
+        area.remove();
+        return Promise.resolve(ok);
+      } catch (e) {
+        return Promise.resolve(false);
+      }
+    }
+
+    for (const button of document.querySelectorAll('.copy')) {
+      button.addEventListener('click', () => {
+        const state = button.querySelector('.copy-state');
+        copyText(button.dataset.copy || '').then((ok) => {
+          state.textContent = ok ? '已复制' : '复制失败，请手动选中';
+          setTimeout(() => { state.textContent = '点击复制'; }, 2500);
+        });
+      });
+    }
+
     // 扩展可达性探测（静态页 origin 已纳入扩展 externally_connectable 白名单）。
     (function detectExtension() {
       const statusEl = document.getElementById('status');
@@ -180,11 +244,15 @@
       });
     })();
 
-    // 这里刻意不提供"一键复制 chrome://extensions"的按钮：本页一旦往剪贴板里写东西，
-    // 就会把安装程序放好的**扩展目录**顶掉，第 ③ 步（文件夹窗口粘贴路径）立刻失效。
-    // 而网页又无法跳转到 chrome:// 地址（链接、location.href、target=_blank、window.open
-    // 实测全被拦，控制台报 Not allowed to load local resource），所以「打开扩展管理页」
-    // 只能靠用户点浏览器自己的菜单：右上角 ⋮ →「扩展程序」→「管理扩展程序」。
+    // 仍然不提供「一键打开 chrome://extensions」的按钮：网页无法跳转到 chrome:// 地址
+    // （链接、location.href、target=_blank、window.open 实测全被拦，控制台报
+    // Not allowed to load local resource），所以「打开扩展管理页」只能靠用户点浏览器
+    // 自己的菜单：右上角 ⋮ →「扩展程序」→「管理扩展程序」。
+    //
+    // 2026-10-29：**复制扩展目录**的按钮是有的（见上面的 .copy 与 copyText）。原来的注释
+    // 说「本页往剪贴板写东西会把安装程序放好的扩展目录顶掉」—— 实际上安装链路（install.cmd
+    // 与引导体）从来不动剪贴板，那句话不成立；现在两个候选地址由用户自己点复制，
+    // 比「去别处复制」少一步错。
 
     // 从同目录的 cloudfile-agent2-update.json / extension-update.json 读版本号，发版只更新这两个 JSON。
     (async function loadManifests() {
