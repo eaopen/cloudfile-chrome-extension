@@ -2,3 +2,4 @@ dist/
 .idea/
 key.pem
 *.pem
+help/img/*-bak.png
