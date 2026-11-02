@@ -83,13 +83,41 @@ helpButton.addEventListener('click', async () => {
   showHelpHint('没有拿到 CloudFile 服务地址：请先运行安装包里的 install.cmd，或在网盘里发起一次「本地打开」后再试。');
 });
 
+// 扩展自己的版本号：用户报「未就绪」时第一个要问的就是它，
+// 别让人再去 chrome://extensions 里翻。
+document.querySelector('#extension-version').textContent =
+  `v${chrome.runtime.getManifest().version}`;
+
+// 「Agent 未就绪」不是一个原因，是一类。Chrome 的原文（Specified native messaging host
+// not found / Native host has exited …）直接摆给用户等于没说，这里翻成下一步能做的事。
+function agentFailureText(result) {
+  const error = String(result?.error || '');
+  const detail = String(result?.detail || '');
+  const all = `${error} ${detail}`;
+  if (/not found|not registered|找不到/i.test(all))
+    return '本机没有注册 CloudFile Host，或注册指向的程序已被删除。重跑安装包里的 install.cmd 即可修复。';
+  if (/exited|failed to start|crash|Missing|缺失|os error 2/i.test(all))
+    return '本机 Host 启动失败，通常是安装目录被清理或被安全软件隔离。重跑 install.cmd 会补齐文件。';
+  if (/timeout|超时|response unknown/i.test(all))
+    return '任务中心没有在时限内响应，可以先点下面「启动任务中心并重试」。';
+  return detail || error || '本机 Agent 没有响应：先点下面「启动任务中心并重试」，仍然不行就重跑 install.cmd。';
+}
+
 // 查询 Agent 状态，渲染就绪状态、自动检测应用、本地目录与两侧的升级提示。
-chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
-  lastStatus = result?.ok ? result : null;
-  if (chrome.runtime.lastError || !result?.ok) {
-    status.textContent = `Agent 未就绪：${result?.error ?? '请先运行安装包里的 install.cmd。'}`;
-    status.className = 'status error';
-  } else {
+function checkAgent() {
+  chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
+    lastStatus = result?.ok ? result : null;
+    if (chrome.runtime.lastError || !result?.ok) {
+      status.textContent = `Agent 未就绪：${agentFailureText(result)}`;
+      status.className = 'status error';
+      // 未就绪时也要留一条出路：任务中心被关掉时 Host 还能把它拉起来；
+      // Host 自己没注册时，点下去会明确告诉用户去跑 install.cmd，而不是干瞪眼。
+      openTaskCenterButton.hidden = false;
+      openTaskCenterButton.textContent = '启动任务中心并重试';
+      await renderExtensionUpdate();
+      renderUpdateSection();
+      return;
+    }
     // 只写「Agent」，不区分 Go / Windows / Rust 这些实现名 —— 用户不需要知道。
     // 版本必须是真实构建版本（status.version 已经是 VERSION；build_version 兜底）。
     status.textContent = `Agent 已就绪 · v${result.build_version || result.version}`;
@@ -116,11 +144,12 @@ chrome.runtime.sendMessage({ type: 'agent_status' }, async (result) => {
       taskCenter.hidden = false;
       renderTaskSummary(result.capabilities.includes('focus_task'));
     }
-  }
-  // 扩展侧的状态由后台探测后落库，这里直接读，保证与 Agent 侧同一次探测结果。
-  await renderExtensionUpdate();
-  renderUpdateSection();
-});
+    // 扩展侧的状态由后台探测后落库，这里直接读，保证与 Agent 侧同一次探测结果。
+    await renderExtensionUpdate();
+    renderUpdateSection();
+  });
+}
+checkAgent();
 
 // P0 read-only task summary. Never expose local absolute paths, credentials,
 // native intents or an upload button. Not advertised until a trusted Host opts in.
@@ -280,19 +309,29 @@ function markUpdateSeen(kind, version) {
 }
 
 openTaskCenterButton.addEventListener('click', () => {
+  // 未就绪时走 launch_agent：不再先探测一次 status（那一步本身就可能正卡在任务中心
+  // 冷启动上，再走一遍等于让用户等两轮），直接让 Host 把任务中心拉起来再复检。
+  const recovering = status.classList.contains('error');
   openTaskCenterButton.disabled = true;
   openTaskCenterHint.hidden = true;
-  chrome.runtime.sendMessage({ type: 'open_task_center' }, (result) => {
+  chrome.runtime.sendMessage({ type: recovering ? 'launch_agent' : 'open_task_center' }, (result) => {
     openTaskCenterButton.disabled = false;
     if (chrome.runtime.lastError || !result?.ok) {
       openTaskCenterHint.hidden = false;
-      openTaskCenterHint.textContent = `无法打开任务中心：${result?.error ?? 'Agent 未响应，请重新运行安装包里的 install.cmd。'}`;
+      openTaskCenterHint.textContent =
+        `无法启动任务中心：${result?.error ?? 'Host 没有响应'}。` +
+        (recovering && /not found|未注册/i.test(String(result?.error || ''))
+          ? '\n本机 Host 没注册，需要先运行安装包里的 install.cmd。'
+          : '');
       return;
     }
     openTaskCenterHint.hidden = false;
-    openTaskCenterHint.textContent = result.launched
-      ? '任务中心正在启动…'
-      : '任务中心已切到前台。';
+    if (!recovering) {
+      openTaskCenterHint.textContent = result.launched ? '任务中心正在启动…' : '任务中心已切到前台。';
+      return;
+    }
+    openTaskCenterHint.textContent = '任务中心正在启动，稍等几秒会自动重新检测…';
+    setTimeout(checkAgent, 2500);
   });
 });
 

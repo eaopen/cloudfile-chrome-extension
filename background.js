@@ -37,11 +37,24 @@ const LEGACY_GO_OPERATIONS = new Set([
 // its own CloudFile session and CSRF token; these messages only relay the
 // Agent's enrollment/signature steps, always bound to the real sender origin.
 const PAIRING_MESSAGES = new Set(['pair_prepare', 'pair_sign', 'pair_confirm']);
+// 最近一次探测 Host 的真实失败原因。Chrome 的原话是「Specified native messaging host
+// not found」「Native host has exited」这类英文，直接摆给用户没有意义，但它决定了
+// 「未就绪」到底是哪一种：Host 没注册 / Host 起不来 / Host 起来了但报错。
+// popup 据此给出不同的下一步动作。
+let lastNativeError = '';
 async function readNativeStatus(host) {
   try {
     const status = await chrome.runtime.sendNativeMessage(host, { type: 'status' });
-    return status?.ok === true ? status : null;
-  } catch { return null; }
+    if (status?.ok === true) {
+      lastNativeError = '';
+      return status;
+    }
+    lastNativeError = status?.error ? String(status.error) : `${host} 没有返回可用状态`;
+    return null;
+  } catch (error) {
+    lastNativeError = error?.message || 'sendNativeMessage failed';
+    return null;
+  }
 }
 // Agent 报给扩展的版本：`version` 自 2.0.5 起就是构建版本，`build_version` 是同一值的
 // 兼容字段。早期版本把 `version` 放成协议族标记（"2.2.0"），所以这里两种都认，
@@ -109,9 +122,28 @@ async function probeAgent() {
 
 // popup 需要的是完整状态（本地目录、可执行文件路径、已装应用），而 check_update
 // 是刻意的轻量消息、不带这些字段 —— 所以这里必须直接问 status。
+// 失败时不只回一个「未就绪」：detail 带上 Chrome 的原话，popup 才能分辨是
+// 「Host 没注册」还是「Host 起不来」，并给出对应的下一步。
 async function probeAgentStatus() {
   const result = await routeNative('status', { type: 'status' });
-  return result?.ok ? result : null;
+  if (result?.ok) return result;
+  return { ok: false, error: result?.error || '本机 Agent 未就绪', detail: lastNativeError };
+}
+
+// 「未就绪」时用户的出路：让 Host 把任务中心拉起来。
+// 不走 preferredNative 的 status 探测 —— 那一步本身可能正卡在任务中心冷启动上，
+// 再走一遍等于让用户等两轮。Windows 的 Host 名是固定的，直接发即可。
+// Host 侧收到 open_task_center 会先走 IPC（已在跑就切前台），失败再直接拉起桌面进程。
+async function launchAgent() {
+  const host = (await isWindows()) ? CURRENT_HOST : AGENT2_HOST;
+  try {
+    const response = await chrome.runtime.sendNativeMessage(host, { type: 'open_task_center' });
+    if (response?.ok) return { ok: true, launched: response.launched === true, host };
+    return { ok: false, error: response?.error || `${host} 没有返回成功` };
+  } catch (error) {
+    lastNativeError = error?.message || 'sendNativeMessage failed';
+    return { ok: false, error: lastNativeError };
+  }
 }
 
 // 扩展被 reload / 更新后 alarm 会被清掉（Chrome 只在浏览器重启时保留它们），
@@ -623,12 +655,16 @@ async function handleInternal(message) {
     // 注意：这里不能用 check_update（轻量、不带工作区字段），否则 popup 会
     // 因为拿不到 workspace_root 而把整个「本地文件目录」区隐藏掉。
     const result = await probeAgentStatus();
-    if (!result?.ok) return { ok: false, error: '本机 Agent 未就绪' };
+    if (!result?.ok) return { ok: false, error: result.error, detail: result.detail };
     await applyProbe(result);
     // 只刷角标、不弹通知：用户正看着 popup，popup 紧接着就会把该版本标记为已读，
     // 这时候再弹系统通知是打扰。
     await refreshBadge();
     return result;
+  }
+  // 未就绪时 popup 上的「启动任务中心并重试」：直接让 Host 拉起桌面进程。
+  if (message?.type === 'launch_agent') {
+    return launchAgent();
   }
   if (message?.type === 'updates_seen') {
     // popup 已把该版本展示给用户：清角标、并抑制同一版本的系统通知。
@@ -645,7 +681,9 @@ async function handleInternal(message) {
     const { extension_update } = await chrome.storage.local.get('extension_update');
     const target = message.target || extension_update?.latest_version || '';
     const result = await probeAgentStatus();
-    if (!result) return { ok: false, state: 'unknown', error: 'Agent 未响应，无法确认升级结果。' };
+    // probeAgentStatus 现在总是回对象（失败时带 error/detail），不能再只判真值：
+    // 否则「Agent 没响应」会被当成一次拿到了状态的查询。
+    if (!result?.ok) return { ok: false, state: 'unknown', error: 'Agent 未响应，无法确认升级结果。' };
     const installed = result.extension_installed_version || '';
     if (target && compareVersions(installed, target) >= 0) {
       // 磁盘上已经是新版本：清掉角标/提示，剩下只要用户点一次刷新。
