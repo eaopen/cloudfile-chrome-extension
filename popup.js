@@ -236,7 +236,10 @@ function renderUpdateSection() {
 // 它回的是一条「已开始」。所以这里必须自己轮询真实结果，否则用户点完只看到「已开始」，
 // 永远等不到成功或失败（2026-10-27 现场反馈）。
 const UPGRADE_POLL_MS = 1500;
-const UPGRADE_TIMEOUT_MS = 90000;
+// 轮询走的是轻量 `upgrade_state`（秒回）；老 Agent 退回 `status`（每轮最多卡
+// 半分钟）。45 秒里轻量路径有 30 次机会，足够覆盖下载 + 替换；老路径退一万步
+// 也会把「还没好」明确说成超时，而不是让人干等到一句「结果未知」。
+const UPGRADE_TIMEOUT_MS = 45000;
 
 function wireUpgrade(button, kind) {
   button.addEventListener('click', () => {
@@ -260,7 +263,7 @@ function pollExtensionUpgrade(button, target) {
     chrome.runtime.sendMessage({ type: 'extension_upgrade_state', target }, (state) => {
       if (chrome.runtime.lastError) {
         button.disabled = false;
-        setUpdateStatus(`升级结果未知：${chrome.runtime.lastError.message}。\n请到 chrome://extensions 查看本扩展显示的版本号。`);
+        setUpdateStatus(`升级结果未知：${chrome.runtime.lastError.message}。\n请到 chrome://extensions 点击刷新后查看本扩展显示的版本号。`);
         return;
       }
       if (state?.state === 'completed') {
@@ -279,17 +282,22 @@ function pollExtensionUpgrade(button, target) {
       }
       if (state?.state === 'failed' || state?.ok === false) {
         button.disabled = false;
+        // unknown ≠ 失败：Agent 忙/暂时没响应时不该说成「升级失败」，
+        // 让用户以为文件被弄坏了。给出核对办法和重试入口。
+        const headline = state?.state === 'failed' ? '升级失败' : '升级结果未知';
         setUpdateStatus(
-          `升级失败：${state?.error ?? '未能确认升级结果。'}\n` +
-          '可以再点一次「立即升级扩展」重试；仍然失败就按「安装帮助」里的方式重装扩展。',
+          `${headline}：${state?.error ?? '未能确认升级结果。'}\n` +
+          '可以再点一次「立即升级扩展」重试；仍然不行就按「安装帮助」重装，' +
+          '或到 chrome://extensions 刷新后核对本扩展的版本号。',
         );
         return;
       }
       if (Date.now() >= deadline) {
         button.disabled = false;
         setUpdateStatus(
-          '升级还没完成（可能仍在下载）。\n' +
-          '可以再点一次「立即升级扩展」，或到 chrome://extensions 看本扩展的版本号是否已经是新版本。',
+          `等待 ${Math.round(UPGRADE_TIMEOUT_MS / 1000)} 秒仍未等到 Agent 的升级结果。\n` +
+          '可以再点一次「立即升级扩展」重试；也可以打开 chrome://extensions，' +
+          '刷新后看本扩展显示的版本号是否已经是新版本。',
         );
         return;
       }

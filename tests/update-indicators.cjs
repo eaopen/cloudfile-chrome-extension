@@ -108,8 +108,10 @@ test('Agent2.3 staged-but-deferred updates are not falsely reported as failed', 
 });
 
 test('extension upgrade reports the real outcome and never auto-reloads', async () => {
+  // 老 Agent 不认识 upgrade_state：回 invalid native message，弹窗退回完整 status。
   // 磁盘上已经是新版本：即使 update-result 还写着 running，也算完成。
   const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'upgrade_state') return { ok: false, error: 'invalid native message' };
     if (msg.type === 'status') return { ok: true, version: '2.0.10', agent_family: 'agent2',
       extension_installed_version: '2.0.10', extension_latest_version: '2.0.10',
       last_update_kind: 'extension', last_update_state: 'running' };
@@ -124,10 +126,12 @@ test('extension upgrade reports the real outcome and never auto-reloads', async 
   const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.10' });
   assert.equal(state.state, 'completed');
   assert.equal(state.version, '2.0.10');
+  assert.ok(b.nativeCalls.some(c => c.message.type === 'status'), '老 Agent 必须退回 status');
 });
 
 test('a still-running extension upgrade keeps the popup polling', async () => {
   const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'upgrade_state') return { ok: false, error: 'invalid native message' };
     if (msg.type === 'status') return { ok: true, version: '2.0.10', agent_family: 'agent2',
       extension_installed_version: '2.0.9', last_update_kind: 'extension', last_update_state: 'running' };
     return { ok: true };
@@ -139,19 +143,51 @@ test('a still-running extension upgrade keeps the popup polling', async () => {
 
 test('a failed extension upgrade surfaces as failed, not as success', async () => {
   const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'upgrade_state') return { ok: false, error: 'invalid native message' };
     if (msg.type === 'status') return { ok: true, version: '2.0.10', agent_family: 'agent2',
-      extension_installed_version: '2.0.9', last_update_kind: 'extension', last_update_state: 'failed' };
+      extension_installed_version: '2.0.9', last_update_kind: 'extension', last_update_state: 'failed',
+      last_update_error: '下载扩展清单失败' };
     return { ok: true };
   }});
   const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.10' });
   assert.equal(state.ok, false);
   assert.equal(state.state, 'failed');
   assert.match(state.error, /失败/);
+  assert.match(state.error, /下载扩展清单失败/, 'Agent 记下的失败原因要带到界面');
 });
 
 test('an unresponsive agent cannot be mistaken for a successful upgrade', async () => {
   const b = loadBackground({ platform: 'win', native: async () => { throw new Error('host gone'); } });
   const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.10' });
-  assert.equal(state.ok, false);
-  assert.equal(state.state, 'unknown');
+  // Agent 没响应 ≠ 升级失败：受理时它已确认过，分离进程很可能还在跑。
+  // 继续 pending 等下一轮，超时文案会引导用户去扩展页核对版本。
+  assert.equal(state.state, 'pending');
+  assert.notEqual(state.state, 'completed');
+});
+
+test('polling uses the lightweight upgrade_state without a full status probe', async () => {
+  // 2026-11-03 现场：老路径每 1.5 秒发一次 status，而 status 要拉两份更新清单
+  // （各 30 秒超时），用户等到超时也看不到结果。轻量轮询必须一次 native 调用答完。
+  const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'upgrade_state') return { ok: true, agent_version: '2.0.18',
+      extension_installed_version: '2.0.11', last_update_kind: 'extension', last_update_state: 'running' };
+    if (msg.type === 'status') throw new Error('轮询不该再走完整 status（含网络）');
+    return { ok: true };
+  }});
+  const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.12' });
+  assert.equal(state.state, 'running');
+  assert.equal(state.version, '2.0.11');
+  assert.ok(b.nativeCalls.every(c => c.message.type === 'upgrade_state'));
+});
+
+test('the lightweight upgrade_state reports completion from the on-disk version', async () => {
+  const b = loadBackground({ platform: 'win', native: async (host, msg) => {
+    if (msg.type === 'upgrade_state') return { ok: true, agent_version: '2.0.18',
+      extension_installed_version: '2.0.12', last_update_kind: 'extension', last_update_state: 'running' };
+    return { ok: true, version: '2.0.18', agent_family: 'agent2', capabilities: ['check_update'] };
+  }});
+  const state = await b.sendInternal({ type: 'extension_upgrade_state', target: '2.0.12' });
+  // 完成判据是磁盘版本，不是 update-result 里的 running。
+  assert.equal(state.state, 'completed');
+  assert.equal(state.version, '2.0.12');
 });

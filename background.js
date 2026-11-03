@@ -130,6 +130,57 @@ async function probeAgentStatus() {
   return { ok: false, error: result?.error || '本机 Agent 未就绪', detail: lastNativeError };
 }
 
+// 升级结果轮询。老路径每次都发 `status`，而 `--status` 内部要拉两份更新清单
+// （HTTP，各 30 秒超时）——更新源一慢，弹窗 1.5 秒一轮的轮询每轮都卡半分钟，
+// 用户等到超时也看不到成功/失败（2026-11-03 现场反馈）。
+//
+// 新 Agent 认识 `upgrade_state`：只读 update-result.json + 磁盘上的扩展 manifest，
+// 秒回。老 Agent 回 invalid native message，那时才退回完整 status（慢，但不比以前差）。
+async function extensionUpgradeState(target) {
+  const { extension_update } = await chrome.storage.local.get('extension_update');
+  const wanted = target || extension_update?.latest_version || '';
+  const host = (await isWindows()) ? CURRENT_HOST : AGENT2_HOST;
+  let state;
+  try {
+    // 不走 sendNative/preferredNative：那会先做一轮完整 status 探测，
+    // 等于把要省掉的网络请求又做了一遍。
+    const answer = await chrome.runtime.sendNativeMessage(host, { type: 'upgrade_state' });
+    if (answer?.ok) {
+      state = answer;
+    } else if (/invalid native message|unsupported|not\s+supported/i.test(answer?.error || '')) {
+      state = null; // 老 Agent：走下面的 status 兜底。
+    } else {
+      return { ok: false, state: 'unknown', error: answer?.error || 'Agent 未响应。' };
+    }
+  } catch {
+    // Host 没注册 / 起不来：继续等下一轮，别误报成升级失败——
+    // 受理时 Host 已经确认过，分离进程此刻很可能正在跑。
+    return { ok: true, state: 'pending', version: '' };
+  }
+  if (!state) {
+    const result = await probeAgentStatus();
+    // 同理：探测不到 ≠ 升级失败。让轮询继续，超时提示会引导用户去看版本号。
+    if (!result?.ok) return { ok: true, state: 'pending', version: '' };
+    state = result;
+  }
+  const installed = state.extension_installed_version || '';
+  if (wanted && compareVersions(installed, wanted) >= 0) {
+    // 磁盘上已经是新版本：清掉角标/提示，剩下只要用户点一次刷新。
+    // 不 await —— 它要重新拉一次更新源，别让弹窗的轮询等网络。
+    void refreshUpdates().catch(() => {});
+    return { ok: true, state: 'completed', version: installed };
+  }
+  const updateState = state.last_update_kind === 'extension' ? state.last_update_state || '' : '';
+  if (updateState === 'failed') {
+    return {
+      ok: false,
+      state: 'failed',
+      error: state.last_update_error || '下载或替换扩展文件失败（Agent 记为 failed）。',
+    };
+  }
+  return { ok: true, state: updateState === 'running' ? 'running' : 'pending', version: installed };
+}
+
 // 「未就绪」时用户的出路：让 Host 把任务中心拉起来。
 // 不走 preferredNative 的 status 探测 —— 那一步本身可能正卡在任务中心冷启动上，
 // 再走一遍等于让用户等两轮。Windows 的 Host 名是固定的，直接发即可。
@@ -675,31 +726,14 @@ async function handleInternal(message) {
     return startUpgrade(message.kind);
   }
   if (message?.type === 'extension_upgrade_state') {
-    // 扩展升级由 native-host 的分离进程完成（下载 → 校验 sha256 → 解包 → 原子换目录），
-    // 它只在**受理时**回一条 ok，真实结果写进 update-result.json 和磁盘上的 manifest。
-    // 弹窗每 1.5s 问一次这里。
-    const { extension_update } = await chrome.storage.local.get('extension_update');
-    const target = message.target || extension_update?.latest_version || '';
-    const result = await probeAgentStatus();
-    // probeAgentStatus 现在总是回对象（失败时带 error/detail），不能再只判真值：
-    // 否则「Agent 没响应」会被当成一次拿到了状态的查询。
-    if (!result?.ok) return { ok: false, state: 'unknown', error: 'Agent 未响应，无法确认升级结果。' };
-    const installed = result.extension_installed_version || '';
-    if (target && compareVersions(installed, target) >= 0) {
-      // 磁盘上已经是新版本：清掉角标/提示，剩下只要用户点一次刷新。
-      // 不 await —— 它要重新拉一次更新源，别让弹窗的轮询等网络。
-      void refreshUpdates().catch(() => {});
-      return { ok: true, state: 'completed', version: installed };
-    }
-    const state = result.last_update_kind === 'extension' ? result.last_update_state || '' : '';
-    if (state === 'failed') {
-      return {
-        ok: false,
-        state: 'failed',
-        error: '下载或替换扩展文件失败（Agent 记为 failed）。',
-      };
-    }
-    return { ok: true, state: state === 'running' ? 'running' : 'pending', version: installed };
+    // 绝不让这个 handler reject：MV3 里 promise reject 会直接关掉消息端口，
+    // 弹窗只能收到「The message port closed before a response was received」，
+    // 真实原因反而丢了（2026-11-03 现场：等了很久只看到一句「升级结果未知」）。
+    return extensionUpgradeState(message.target).catch((error) => ({
+      ok: false,
+      state: 'unknown',
+      error: error?.message || '查询升级结果时出错。',
+    }));
   }
   if (message?.type === 'open_task_center') {
     // 任务中心可能被用户手动关掉。native host 会先试着把已在跑的实例切前台，
