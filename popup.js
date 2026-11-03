@@ -288,7 +288,7 @@ function pollExtensionUpgrade(button, target) {
         setUpdateStatus(
           `${headline}：${state?.error ?? '未能确认升级结果。'}\n` +
           '可以再点一次「立即升级扩展」重试；仍然不行就按「安装帮助」重装，' +
-          '或到 chrome://extensions 刷新后核对本扩展的版本号。',
+          '或请到 chrome://extensions 点击刷新后查看本扩展显示的版本号。',
         );
         return;
       }
@@ -296,8 +296,8 @@ function pollExtensionUpgrade(button, target) {
         button.disabled = false;
         setUpdateStatus(
           `等待 ${Math.round(UPGRADE_TIMEOUT_MS / 1000)} 秒仍未等到 Agent 的升级结果。\n` +
-          '可以再点一次「立即升级扩展」重试；也可以打开 chrome://extensions，' +
-          '刷新后看本扩展显示的版本号是否已经是新版本。',
+          '可以再点一次「立即升级扩展」重试；也可以请到 chrome://extensions ' +
+          '点击刷新后查看本扩展显示的版本号。',
         );
         return;
       }
