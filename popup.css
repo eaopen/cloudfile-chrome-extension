@@ -13,11 +13,7 @@
 /* 这些元素自身设了 display，会盖过 [hidden] 的 UA 样式，必须显式关掉。 */
 .update[hidden],.update-command[hidden],.update-actions[hidden],.update-status[hidden]{display:none}
 
-/* v0.8 capability-gated task summaries; no action modifies the cloud file. */
-.task-row{display:flex;justify-content:space-between;align-items:center;gap:7px;border-top:1px solid var(--line);padding:7px 0;font-size:11px;overflow-wrap:anywhere}.task-row span{flex:1;min-width:0}.task-row button{font:inherit;font-size:11px;background:var(--lime);border:1px solid var(--ink);padding:3px 7px;cursor:pointer}.task-row button:hover{background:#d0f598}
-
-/* Keep passive task summaries compact while preserving comfortable action targets. */
-#task-summary > .workspace-hint:first-child{margin-top:0}
+/* 任务列表样式已移除（2026-11-04）：扩展不再镜像任务中心的任务列表。 */
 button:focus-visible{outline:2px solid var(--moss);outline-offset:3px}
 /* 「打开任务中心」：Agent 就绪时的主操作（2026-10-27）。 */
 .primary-actions{display:flex;gap:8px;margin:8px 0 4px}

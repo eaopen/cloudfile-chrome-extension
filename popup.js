@@ -7,8 +7,6 @@ const copyButton = document.querySelector('#copy-workspace');
 const workspaceHint = document.querySelector('#workspace-hint');
 const helpButton = document.querySelector('#help');
 const helpHint = document.querySelector('#help-hint');
-const taskCenter = document.querySelector('#task-center');
-const taskSummary = document.querySelector('#task-summary');
 const updateSection = document.querySelector('#update');
 const updateText = document.querySelector('#update-text');
 const updateActions = document.querySelector('#update-actions');
@@ -140,10 +138,8 @@ function checkAgent() {
       }
     }
     renderAgentUpdate(result);
-    if (Array.isArray(result.capabilities) && result.capabilities.includes('task_summary')) {
-      taskCenter.hidden = false;
-      renderTaskSummary(result.capabilities.includes('focus_task'));
-    }
+    // 扩展里不再镜像任务列表（2026-11-04）：它只显示文件名和一句状态，比任务中心
+    // 少得多，两个地方各看一半反而容易漏掉「待上传 / 需要检查」。任务只在任务中心看。
     // 扩展侧的状态由后台探测后落库，这里直接读，保证与 Agent 侧同一次探测结果。
     await renderExtensionUpdate();
     renderUpdateSection();
@@ -151,51 +147,9 @@ function checkAgent() {
 }
 checkAgent();
 
-// P0 read-only task summary. Never expose local absolute paths, credentials,
-// native intents or an upload button. Not advertised until a trusted Host opts in.
-function renderTaskSummary(canFocus) {
-  chrome.runtime.sendMessage({ type: 'agent_task_summary' }, (result) => {
-    taskSummary.replaceChildren();
-    const message = document.createElement('p');
-    message.className = 'workspace-hint';
-    if (chrome.runtime.lastError || !result?.ok) {
-      message.textContent = '任务摘要暂不可用，请通过 Agent 任务中心查看。';
-      taskSummary.append(message);
-      return;
-    }
-    const tasks = result.tasks || [];
-    message.textContent = tasks.length ? '由 Agent 管理的本地文件任务：' : '当前没有本地编辑任务。';
-    taskSummary.append(message);
-    for (const task of tasks.slice(0, 5)) {
-      const row = document.createElement('div');
-      row.className = 'task-row';
-      const title = document.createElement('span');
-      const state = task.needs_review ? '需要检查' :
-        task.local_changed ? '已修改，可在任务中心上传' : '编辑中';
-      title.textContent = String(task.file_name || '本地文件') + ' · ' + state;
-      row.append(title);
-      if (canFocus && /^(?:[0-9a-f]{64}|session-[0-9a-f]{64})$/.test(task.task_id || '')) {
-        const focus = document.createElement('button');
-        focus.type = 'button';
-        focus.textContent = '定位';
-        focus.addEventListener('click', () => {
-          chrome.runtime.sendMessage({ type: 'agent_focus_task', task_id: task.task_id }, (reply) => {
-            if (chrome.runtime.lastError || !reply?.ok)
-              message.textContent = '无法定位该任务，请打开 Agent 任务中心。';
-          });
-        });
-        row.append(focus);
-      }
-      taskSummary.append(row);
-    }
-    if (tasks.length > 5) {
-      const more = document.createElement('p');
-      more.className = 'workspace-hint';
-      more.textContent = '更多任务请在 Agent 的独立任务中心查看。';
-      taskSummary.append(more);
-    }
-  });
-}
+// 任务列表已从弹窗移除：任务中心是唯一入口，扩展只负责「Agent 就绪状态 / 本地目录 /
+// 升级提示 / 帮助」这几件任务中心不重复的事。后台的 task_summary 能力保留不动 ——
+// 它是只读的，将来别处（例如网页侧）要用还在。这里不再请求它。
 
 function renderAgentUpdate(result) {
   if (!result.update_available) return;
