@@ -45,6 +45,30 @@ test('cross-origin, wrong-scheme and unbounded open URIs never reach the native 
   assert.equal(background.nativeCalls.length, 0);
 });
 
+// 原来的拒绝文案只有一句「不匹配」，现场无法区分是「页面和实例不同源」还是
+// 「实例带了反代前缀」。两种情况的修法完全不同，所以必须能一眼分开。
+test('a rejected open URI names the two origins it compared', async () => {
+  const b = loadBackground();
+  const crossOrigin = await b.sendExternal({
+    type: 'open_uri',
+    uri: 'cloudfile-open://v1/open?instance=' + encodeURIComponent('https://hub.example') +
+      '&session=11111111-1111-4111-8111-111111111111&ticket=' + 'A'.repeat(43),
+  }, { url: 'http://etech.example/file' });
+  assert.equal(crossOrigin.ok, false);
+  assert.match(crossOrigin.error, /页面是 http:\/\/etech\.example/);
+  assert.match(crossOrigin.error, /云端实例是 https:\/\/hub\.example/);
+
+  const withPath = await b.sendExternal({
+    type: 'open_uri',
+    uri: 'cloudfile-open://v1/open?instance=' + encodeURIComponent('http://etech.example/prod-api') +
+      '&session=11111111-1111-4111-8111-111111111111&ticket=' + 'A'.repeat(43),
+  }, { url: 'http://etech.example/file' });
+  assert.equal(withPath.ok, false);
+  assert.match(withPath.error, /带了路径/);
+  // 任何情况下都不能把票据回显给页面。
+  assert.equal(withPath.error.includes('A'.repeat(43)), false);
+});
+
 test('a page-initiated local open forwards the session and records the server', async () => {  const background = loadBackground({ native: async () => ({ ok: true }) });
   const reply = await background.sendExternal({
     type: 'open_session',

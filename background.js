@@ -613,6 +613,10 @@ async function handleExternal(message, sender) {
     // origin: an HTTPS site cannot silently downgrade to another HTTP site,
     // and neither may request a foreign server using this Native Host.
     let matchingSender = false;
+    // 被拒时的可诊断信息：只放 origin / 协议这类非敏感字段，绝不放 ticket。
+    // 现场原来只有一句「不匹配」，无法区分是「页面和实例不同源」还是
+    // 「实例带了路径前缀」（反代部署很容易踩到后者）。
+    let mismatch = '';
     try {
       const page = new URL(sender.url);
       const uri = new URL(message.uri);
@@ -631,9 +635,20 @@ async function handleExternal(message, sender) {
         page.origin === new URL(instance).origin &&
         instance === new URL(instance).origin &&
         (instance.startsWith('https://') || instance.startsWith('http://'));
+      if (!matchingSender) {
+        let instanceOrigin = '';
+        try { instanceOrigin = new URL(instance).origin; } catch { /* 留空 */ }
+        if (instanceOrigin && page.origin && instanceOrigin !== page.origin) {
+          mismatch = `：页面是 ${page.origin}，但云端实例是 ${instanceOrigin}`;
+        } else if (instanceOrigin && instance !== instanceOrigin) {
+          mismatch = `：云端实例带了路径（${instance}），只接受纯 origin`;
+        } else if (!v1 && !v2) {
+          mismatch = '：不是 cloudfile-open://v1|v2/open 的合法一次性地址';
+        }
+      }
     } catch { /* reject malformed sender or intent */ }
     if (!matchingSender || typeof message.uri !== 'string') {
-      return { ok: false, error: '本地打开请求与当前已授权 CloudFile 网站不匹配' };
+      return { ok: false, error: `本地打开请求与当前已授权 CloudFile 网站不匹配${mismatch}` };
     }
     const result = await routeNative('open_uri', { type: 'open_uri', uri: message.uri });
     // Native Agent2 must first confirm a real, scoped session. Only after
