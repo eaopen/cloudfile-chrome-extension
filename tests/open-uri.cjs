@@ -235,3 +235,35 @@ test('failed V2 handoff never creates new same-origin task-query authorization',
   assert.equal(b.store.server,undefined);
   assert.equal((await b.sendExternal({type:'query_local_file',repo_id:'test',path:'/report.pdf'},{url:origin+'/cfile/file'})).ok,false);
 });
+
+
+test('V2 open diagnostics separate origin, canonical instance and URI failures without disclosing tickets', async () => {
+  const b = loadBackground();
+  const token = 'secret.payload.signature';
+  const page = 'https://etech.example:8443/file';
+  const uriFor = (instance) => 'cloudfile-open://v2/open?instance=' +
+    encodeURIComponent(instance) +
+    '&session=11111111-1111-4111-8111-111111111111&ticket=' + token;
+  for (const [uri, expectedCode, instanceOrigin] of [
+    [uriFor('https://etech.example'), 'CF_OPEN_ORIGIN_MISMATCH', 'https://etech.example'],
+    [uriFor('http://etech.example:8443'), 'CF_OPEN_ORIGIN_MISMATCH', 'http://etech.example:8443'],
+    [uriFor('https://etech.example:8443/prod-api'), 'CF_OPEN_INSTANCE_NOT_ORIGIN', 'https://etech.example:8443'],
+    [uriFor('https://etech.example:8443/'), 'CF_OPEN_INSTANCE_NOT_ORIGIN', 'https://etech.example:8443'],
+    [uriFor('http://bad:bad@etech.example'), 'CF_OPEN_INSTANCE_INVALID', ''],
+    [uriFor('not a URL'), 'CF_OPEN_INSTANCE_INVALID', ''],
+    [uriFor('https://etech.example:8443') + '&ticket=extra', 'CF_OPEN_URI_FORMAT', ''],
+    [uriFor('https://etech.example:8443').replace('secret.payload.signature','broken'), 'CF_OPEN_URI_FORMAT', ''],
+  ]) {
+    const answer = await b.sendExternal({type: 'open_uri', uri}, {url:page});
+    assert.equal(answer.ok,false);
+    assert.equal(answer.error_code, expectedCode);
+    assert.equal(answer.page_origin, 'https://etech.example:8443');
+    assert.equal(answer.instance_origin, instanceOrigin);
+    assert.ok(!JSON.stringify(answer).includes(token));
+  }
+  const iframe = await b.sendExternal(
+    {type:'open_uri',uri:uriFor('https://parent.example')},
+    {url:'https://etech.example:8443/embedded-file'});
+  assert.equal(iframe.error_code, 'CF_OPEN_ORIGIN_MISMATCH');
+  assert.equal(b.nativeCalls.filter(x=>x.message.type === 'open_uri').length, 0);
+});

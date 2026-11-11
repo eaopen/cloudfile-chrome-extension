@@ -576,6 +576,55 @@ async function pairNative(message, senderOrigin) {
   });
 }
 
+// One-time URI validation must run BEFORE Native Messaging. Report only safe
+// origins, never the scoped ticket, file path or complete open URI.
+function inspectOpenUri(uriText, pageOrigin) {
+  const rejected = (code, detail, instanceOrigin = '') => ({
+    ok: false,
+    error_code: code,
+    page_origin: pageOrigin,
+    instance_origin: instanceOrigin,
+    error: '本地打开被拒绝：' + detail,
+  });
+  if (typeof uriText !== 'string' || uriText.length > 16384)
+    return rejected('CF_OPEN_URI_FORMAT', '打开链接格式错误或超过长度限制，请从网盘重新点击文件。');
+  let uri;
+  try { uri = new URL(uriText); } catch {
+    return rejected('CF_OPEN_URI_FORMAT', '打开链接无法解析，请重新点击文件。');
+  }
+  const query = uri.searchParams;
+  const v1 = uri.hostname === 'v1' && uriText.startsWith('cloudfile-open://v1/open?') &&
+    uriText.length <= 2048;
+  const v2 = uri.hostname === 'v2' && uriText.startsWith('cloudfile-open://v2/open?') &&
+    uriText.length <= 16384 &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.get('session') || '') &&
+    /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(query.get('ticket') || '');
+  if (uri.protocol !== 'cloudfile-open:' || !(v1 || v2) ||
+      uri.pathname !== '/open' || uri.hash ||
+      [...query.keys()].join(',') !== 'instance,session,ticket')
+    return rejected('CF_OPEN_URI_FORMAT', '打开链接字段无效，请从网盘重新发起本地查看或编辑。');
+
+  const instance = query.get('instance');
+  let parsed;
+  try { parsed = new URL(instance); } catch {
+    return rejected('CF_OPEN_INSTANCE_INVALID', '文件服务实例地址无法解析，请检查 Hub 的外部访问地址。');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) ||
+      parsed.username || parsed.password || !parsed.hostname)
+    return rejected('CF_OPEN_INSTANCE_INVALID', '文件服务实例地址不是有效的 HTTP(S) 服务入口。');
+  const instanceOrigin = parsed.origin;
+  if (instance !== instanceOrigin)
+    return rejected('CF_OPEN_INSTANCE_NOT_ORIGIN',
+      '文件服务实例带了路径、尾部斜杠或其他非规范内容；请将 Hub 的 instance 配置为纯 origin（协议、域名、端口）。',
+      instanceOrigin);
+  if (pageOrigin !== instanceOrigin)
+    return rejected('CF_OPEN_ORIGIN_MISMATCH',
+      '页面是 ' + pageOrigin + '，云端实例是 ' + instanceOrigin +
+      '。请核对 EAP/Hub 外部地址及可信反向代理 Host/协议；嵌入式页面应检查实际发送消息的 iframe 来源。',
+      instanceOrigin);
+  return {ok: true};
+}
+
 async function handleExternal(message, sender) {
   // Manifest accepts HTTP/HTTPS on any intranet host, so source authorization
   // must happen HERE for every privileged external operation, not only URI
@@ -612,44 +661,8 @@ async function handleExternal(message, sender) {
     // For an internal HTTP site we ALSO bind the URI to that same sender
     // origin: an HTTPS site cannot silently downgrade to another HTTP site,
     // and neither may request a foreign server using this Native Host.
-    let matchingSender = false;
-    // 被拒时的可诊断信息：只放 origin / 协议这类非敏感字段，绝不放 ticket。
-    // 现场原来只有一句「不匹配」，无法区分是「页面和实例不同源」还是
-    // 「实例带了路径前缀」（反代部署很容易踩到后者）。
-    let mismatch = '';
-    try {
-      const page = new URL(sender.url);
-      const uri = new URL(message.uri);
-      const query = uri.searchParams;
-      const instance = query.get('instance');
-      const v1 = uri.hostname === 'v1' && message.uri.startsWith('cloudfile-open://v1/open?') &&
-        message.uri.length <= 2048;
-      const v2 = uri.hostname === 'v2' && message.uri.startsWith('cloudfile-open://v2/open?') &&
-        message.uri.length <= 16384 &&
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.get('session') || '') &&
-        /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(query.get('ticket') || '');
-      matchingSender = (page.protocol === 'https:' || page.protocol === 'http:') &&
-        uri.protocol === 'cloudfile-open:' && (v1 || v2) &&
-        uri.pathname === '/open' && !uri.hash &&
-        [...query.keys()].join(',') === 'instance,session,ticket' &&
-        page.origin === new URL(instance).origin &&
-        instance === new URL(instance).origin &&
-        (instance.startsWith('https://') || instance.startsWith('http://'));
-      if (!matchingSender) {
-        let instanceOrigin = '';
-        try { instanceOrigin = new URL(instance).origin; } catch { /* 留空 */ }
-        if (instanceOrigin && page.origin && instanceOrigin !== page.origin) {
-          mismatch = `：页面是 ${page.origin}，但云端实例是 ${instanceOrigin}`;
-        } else if (instanceOrigin && instance !== instanceOrigin) {
-          mismatch = `：云端实例带了路径（${instance}），只接受纯 origin`;
-        } else if (!v1 && !v2) {
-          mismatch = '：不是 cloudfile-open://v1|v2/open 的合法一次性地址';
-        }
-      }
-    } catch { /* reject malformed sender or intent */ }
-    if (!matchingSender || typeof message.uri !== 'string') {
-      return { ok: false, error: `本地打开请求与当前已授权 CloudFile 网站不匹配${mismatch}` };
-    }
+    const checked = inspectOpenUri(message?.uri, senderOrigin);
+    if (!checked.ok) return checked;
     const result = await routeNative('open_uri', { type: 'open_uri', uri: message.uri });
     // Native Agent2 must first confirm a real, scoped session. Only after
     // success may the same-origin Web page query the resulting local task.
